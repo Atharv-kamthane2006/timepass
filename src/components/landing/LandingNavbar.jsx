@@ -48,9 +48,6 @@ export default function LandingNavbar() {
       </div>
 
       <div className="flex items-center gap-4">
-        <div className="hidden sm:flex items-center rounded-full bg-indigo-500/10 border border-indigo-500/30 px-3 py-1">
-          <span className="text-xs font-mono text-indigo-400">VIT Code Apex 2.0</span>
-        </div>
         <button 
           onClick={() => navigate('/upload')}
           className="bg-indigo-500 hover:brightness-110 text-white text-sm font-medium px-4 py-2 rounded-lg transition-transform hover:-translate-y-[1px]"

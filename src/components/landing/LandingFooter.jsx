@@ -24,21 +24,10 @@ export default function LandingFooter() {
               <span className="ml-2 text-base font-semibold text-white">SchemaSense</span>
               <span className="ml-1 text-base font-semibold text-indigo-400 italic">AI</span>
             </div>
-            <p className="text-sm text-slate-500 mt-4 max-w-sm leading-relaxed">
-              Built for VIT Code Apex 2.0<br/>
-              Track 2: AI Agents<br/>
-              Problem Statement 2.1 — Data Dictionary Agent
-            </p>
           </div>
 
           {/* Right Block */}
           <div className="flex gap-16">
-            <div className="flex flex-col gap-3">
-              <h4 className="text-white font-semibold text-sm mb-1">Team</h4>
-              <span className="text-sm text-slate-400">Team Member 1 — Backend/AI</span>
-              <span className="text-sm text-slate-400">Team Member 2 — Frontend/UI</span>
-              <span className="text-sm text-slate-400">Team Member 3 — 3D/Demo</span>
-            </div>
             <div className="flex flex-col gap-3">
               <h4 className="text-white font-semibold text-sm mb-1">Built With</h4>
               <span className="text-sm text-slate-400 font-mono">phi3:mini · Ollama</span>
@@ -51,10 +40,10 @@ export default function LandingFooter() {
         {/* Bottom Row */}
         <div className="mt-12 pt-6 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4">
           <span className="text-xs text-slate-600">
-            &copy; 2026 SchemaSense AI · VIT Code Apex 2.0
+            &copy; 2026 SchemaSense AI
           </span>
-          <span className="text-xs text-slate-600">
-            Made with <span className="text-red-500">&hearts;</span> in 24 hours
+          <span className="text-xs text-slate-400 font-medium">
+            Team: Code Conquerors
           </span>
         </div>
 

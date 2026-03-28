@@ -71,19 +71,6 @@ export default function HeroSection() {
 
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center px-4 max-w-4xl">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          className="flex items-center gap-2 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-4 py-1.5 mb-6"
-        >
-          <div className="relative flex h-1.5 w-1.5">
-            <div className="absolute h-1.5 w-1.5 rounded-full bg-emerald-400" style={{ animation: 'greenPulse 1.5s infinite' }}></div>
-            <div className="relative h-1.5 w-1.5 rounded-full bg-emerald-400"></div>
-          </div>
-          <span className="font-mono text-xs text-indigo-300">Track 2 · AI Agents · Problem 2.1</span>
-        </motion.div>
-
         <motion.h1 
           className="text-5xl md:text-6xl lg:text-7xl font-bold leading-tight tracking-tight text-white mb-6"
           initial="initial"
