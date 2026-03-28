@@ -87,14 +87,21 @@ export default function ParticleNetwork({
             p.x += forceDirectionX * force * 1.5;
             p.y += forceDirectionY * force * 1.5;
 
-            // Draw line from mouse to particle
+            const hoverOpacity = 1 - dist / mouse.radius;
+
+            // Draw thick, bright line from mouse to particle
             ctx.beginPath();
             ctx.moveTo(mouse.x, mouse.y);
             ctx.lineTo(p.x, p.y);
-            const opacity = (1 - dist / mouse.radius) * 0.8;
-            ctx.strokeStyle = `${color}, ${opacity})`;
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = `rgba(129, 140, 248, ${hoverOpacity})`; // Bright indigo glow
+            ctx.lineWidth = 2;
             ctx.stroke();
+
+            // Make the particle itself glow brighter
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius * 2, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 255, 255, ${hoverOpacity * 0.8})`; // White hot center
+            ctx.fill();
           } else {
              // Slowly return to base speed if heavily pushed
              p.vx = p.vx * 0.99 + p.baseVx * 0.01;
