@@ -1,9 +1,9 @@
 import React, { useEffect, useRef } from "react";
 
 export default function ParticleNetwork({
-  particleCount = 80,
-  maxDistance = 130,
-  color = "rgba(99, 102, 241, 0.7)"
+  particleCount = 90,
+  maxDistance = 140,
+  color = "rgba(99, 102, 241" // We'll manually append opacity so keep it without the closing parenthesis
 }) {
   const canvasRef = useRef(null);
 
@@ -21,6 +21,22 @@ export default function ParticleNetwork({
     let width = window.innerWidth;
     let height = window.innerHeight;
 
+    // Track mouse position
+    let mouse = { x: null, y: null, radius: 180 };
+
+    const handleMouseMove = (event) => {
+      mouse.x = event.clientX;
+      mouse.y = event.clientY;
+    };
+    const handleMouseLeave = () => {
+      mouse.x = null;
+      mouse.y = null;
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseleave", handleMouseLeave);
+    window.addEventListener("mouseout", handleMouseLeave);
+
     const init = () => {
       width = window.innerWidth;
       height = window.innerHeight;
@@ -29,11 +45,16 @@ export default function ParticleNetwork({
 
       particles = [];
       for (let i = 0; i < particleCount; i++) {
+        // Random velocities
+        const vx = (Math.random() - 0.5) * 0.8;
+        const vy = (Math.random() - 0.5) * 0.8;
         particles.push({
           x: Math.random() * width,
           y: Math.random() * height,
-          vx: (Math.random() - 0.5) * 0.5,
-          vy: (Math.random() - 0.5) * 0.5,
+          vx: vx,
+          vy: vy,
+          baseVx: vx, // Store original base velocity
+          baseVy: vy,
           radius: Math.random() * 1.5 + 0.5,
         });
       }
@@ -43,17 +64,51 @@ export default function ParticleNetwork({
       ctx.clearRect(0, 0, width, height);
 
       particles.forEach((p, i) => {
+        // Move particle
         p.x += p.vx;
         p.y += p.vy;
 
+        // Bounce off walls
         if (p.x < 0 || p.x > width) p.vx *= -1;
         if (p.y < 0 || p.y > height) p.vy *= -1;
 
+        // Mouse interaction (repulsion & drawn connections)
+        if (mouse.x != null && mouse.y != null) {
+          const dx = p.x - mouse.x;
+          const dy = p.y - mouse.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < mouse.radius) {
+            // Repel slightly away from the cursor
+            const forceDirectionX = dx / dist;
+            const forceDirectionY = dy / dist;
+            const force = (mouse.radius - dist) / mouse.radius;
+            // The push factor
+            p.x += forceDirectionX * force * 1.5;
+            p.y += forceDirectionY * force * 1.5;
+
+            // Draw line from mouse to particle
+            ctx.beginPath();
+            ctx.moveTo(mouse.x, mouse.y);
+            ctx.lineTo(p.x, p.y);
+            const opacity = (1 - dist / mouse.radius) * 0.8;
+            ctx.strokeStyle = `${color}, ${opacity})`;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          } else {
+             // Slowly return to base speed if heavily pushed
+             p.vx = p.vx * 0.99 + p.baseVx * 0.01;
+             p.vy = p.vy * 0.99 + p.baseVy * 0.01;
+          }
+        }
+
+        // Draw particle dot itself
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fillStyle = color;
+        ctx.fillStyle = `${color}, 0.7)`;
         ctx.fill();
 
+        // Connect particle to other nearby particles
         for (let j = i + 1; j < particles.length; j++) {
           const p2 = particles[j];
           const dx = p.x - p2.x;
@@ -65,14 +120,8 @@ export default function ParticleNetwork({
             ctx.moveTo(p.x, p.y);
             ctx.lineTo(p2.x, p2.y);
             const opacity = 1 - dist / maxDistance;
-            // Extract the rgb values from rgba string assuming format rgba(r, g, b, a)
-            const colorMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-            if (colorMatch) {
-              ctx.strokeStyle = `rgba(${colorMatch[1]}, ${colorMatch[2]}, ${colorMatch[3]}, ${opacity * 0.5})`;
-            } else {
-              ctx.strokeStyle = `rgba(99, 102, 241, ${opacity * 0.5})`;
-            }
-            ctx.lineWidth = 0.5;
+            ctx.strokeStyle = `${color}, ${opacity * 0.5})`;
+            ctx.lineWidth = 0.6;
             ctx.stroke();
           }
         }
@@ -89,6 +138,9 @@ export default function ParticleNetwork({
 
     return () => {
       window.removeEventListener("resize", handleResize);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseleave", handleMouseLeave);
+      window.removeEventListener("mouseout", handleMouseLeave);
       cancelAnimationFrame(animationFrameId);
     };
   }, [particleCount, maxDistance, color]);
@@ -97,7 +149,7 @@ export default function ParticleNetwork({
     <canvas
       ref={canvasRef}
       className="absolute inset-0 z-0 pointer-events-none"
-      style={{ opacity: 0.7 }}
+      style={{ opacity: 0.85 }}
     />
   );
 }

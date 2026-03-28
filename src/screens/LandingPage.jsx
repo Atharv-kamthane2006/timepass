@@ -5,7 +5,6 @@ import StatsBar from "../components/landing/StatsBar";
 import FeaturesGrid from "../components/landing/FeaturesGrid";
 import HowItWorks from "../components/landing/HowItWorks";
 import DemoPreview from "../components/landing/DemoPreview";
-import TechStrip from "../components/landing/TechStrip";
 import CTASection from "../components/landing/CTASection";
 import LandingFooter from "../components/landing/LandingFooter";
 
@@ -26,7 +25,6 @@ export default function LandingPage() {
       <FeaturesGrid />
       <HowItWorks />
       <DemoPreview />
-      <TechStrip />
       <CTASection />
       <LandingFooter />
     </div>
