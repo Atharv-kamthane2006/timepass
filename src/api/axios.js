@@ -12,7 +12,6 @@ const API = axios.create({
 
 // 🔥 IMPORTANT FIX FOR NGROK + CORS awareness
 API.defaults.headers.common["ngrok-skip-browser-warning"] = "true";
-API.defaults.headers.common["Content-Type"] = "application/json";
 
 // Global Error Handling Interceptor
 API.interceptors.response.use(
@@ -25,13 +24,22 @@ API.interceptors.response.use(
       errorMessage = "Network error or CORS issue. Backend might be down.";
       console.error("🔥 [Global API Error] Network or CORS Issue:", error.message);
     } else {
-      errorMessage = error.response.data?.detail || error.message;
+      const detail = error.response.data?.detail;
+      if (typeof detail === 'string') {
+        errorMessage = detail;
+      } else if (Array.isArray(detail)) {
+        errorMessage = detail.map(d => d.msg || JSON.stringify(d)).join(', ');
+      } else if (typeof detail === 'object' && detail !== null) {
+        errorMessage = JSON.stringify(detail);
+      } else {
+        errorMessage = error.message;
+      }
       console.error(`🔥 [Global API Error] ${error.response.status} - ${errorMessage}`);
     }
     
     // Dispatch to global store to prevent blank screens and show message in UI
     if (useAppStore?.getState) {
-      useAppStore.getState().setError(errorMessage);
+      useAppStore.getState().setError(String(errorMessage));
     }
     
     // Continue to throw so components can handle specific states,

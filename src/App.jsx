@@ -72,7 +72,7 @@ function MainLayout({ children }) {
     <div className="min-h-screen bg-[var(--bg-void)] text-[var(--text-primary)]">
       {globalError && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center justify-between gap-4 rounded-md bg-[var(--danger)] px-4 py-2 text-[var(--text-primary)] shadow-lg animate-fade-in">
-          <span>{globalError}</span>
+          <span>{typeof globalError === 'string' ? globalError : JSON.stringify(globalError)}</span>
           <button onClick={clearError} className="text-[var(--text-primary)] hover:opacity-80">
             ✕
           </button>
