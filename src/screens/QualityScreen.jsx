@@ -49,14 +49,23 @@ export default function QualityScreen() {
       new Promise((_, reject) => setTimeout(() => reject(new Error("Request Timed Out")), ms)),
     ])
 
+  const formatPercent = (val) => {
+    if (val == null) return null;
+    const n = Number(val);
+    if (isNaN(n)) return 0;
+    // If the backend returns a ratio (0.0 to 1.0), convert it to 0-100 scale
+    if (n > 0 && n <= 1) return Math.round(n * 100);
+    return Math.round(n);
+  }
+
   const normalizeItem = (it = {}) => ({
     table: it?.table,
-    score: it?.health_score ?? it?.score ?? 0,
-    completeness: it?.completeness ?? 0,
-    freshness: it?.freshness ?? null,
+    score: Math.round(it?.health_score ?? it?.score ?? 0),
+    completeness: formatPercent(it?.completeness ?? 0),
+    freshness: formatPercent(it?.freshness),
     freshness_latest_date: it?.freshness_latest_date ?? null,
     freshness_days_ago: it?.freshness_days_ago ?? null,
-    consistency: it?.consistency ?? 0,
+    consistency: formatPercent(it?.consistency ?? 0),
     orphan_issues: it?.orphan_issues ?? [],
     columns: Array.isArray(it?.columns) ? it.columns : [],
   })
@@ -203,7 +212,10 @@ export default function QualityScreen() {
                   <div className="flex items-center gap-3">
                     <span className={getScoreColor(item.score)}>{getScoreIcon(item.score)}</span>
                     <div>
-                      <h2 className="text-lg font-semibold capitalize text-[var(--text-primary)]">{item.table?.replace(/_/g, " ")}</h2>
+                      <h2 className="text-lg font-semibold capitalize text-[var(--text-primary)]">
+                        {item.table?.replace(/_/g, " ")}
+                        <span className="ml-2 text-xs font-bold text-[var(--text-muted)]">(raw: {item.score})</span>
+                      </h2>
                       <p className="text-xs text-[var(--text-secondary)]">
                         Table health score: <span className={`font-semibold ${getScoreColor(item.score)}`}>{item.score}/100</span>
                       </p>
