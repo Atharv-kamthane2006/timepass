@@ -6,7 +6,7 @@ export const useVisualizationStore = create((set, get) => ({
   selectedNode: null,
   queriedTables: [],
   visualMode: "default", // default | quality | ai-query
-  viewMode: "3d", // 3d | analytics
+  viewMode: "3d", // 3d | 2d | analytics
   loading: false,
   error: "",
 

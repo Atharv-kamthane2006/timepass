@@ -13,6 +13,15 @@ const MermaidER = ({ erDefinition }) => {
       startOnLoad: false,
       theme: 'dark',
       securityLevel: 'loose',
+      themeVariables: {
+        darkMode: true,
+        background: '#080c14',
+        primaryColor: '#111827',
+        primaryTextColor: '#f8fafc',
+        primaryBorderColor: '#6366f1',
+        lineColor: '#94a3b8',
+        tertiaryColor: '#0d1220',
+      },
       er: {
         useMaxWidth: true,
       },
@@ -24,14 +33,21 @@ const MermaidER = ({ erDefinition }) => {
       const renderId = `er-diagram-svg-${Date.now()}`;
       mermaid.render(renderId, erDefinition).then((result) => {
         containerRef.current.innerHTML = result.svg;
+        const svgElement = containerRef.current.querySelector('svg');
+        if (svgElement) {
+          svgElement.style.width = '100%';
+          svgElement.style.height = '100%';
+          svgElement.style.maxWidth = '100%';
+          svgElement.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        }
       }).catch(err => {
         console.error("Mermaid parsing error: ", err);
-        containerRef.current.innerHTML = '<div class="text-xs text-yellow-300">Unable to render ER diagram from current relationship payload.</div>';
+        containerRef.current.innerHTML = '<div class="text-xs text-[var(--warning)]">Unable to render ER diagram from current relationship payload.</div>';
       });
     }
   }, [erDefinition]);
 
-  return <div ref={containerRef} className="w-full h-full flex justify-center items-center overflow-auto p-4" />;
+  return <div ref={containerRef} className="flex h-full w-full items-center justify-center overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border-default)] bg-[var(--bg-surface)] p-4" />;
 };
 
 export default function ERDiagram2D() {
@@ -85,10 +101,10 @@ export default function ERDiagram2D() {
   }, [tables, relationships]);
 
   return (
-    <div className="absolute inset-0 bg-dark z-0 pt-20 pb-4 overflow-auto">
+    <div className="absolute inset-0 z-0 overflow-auto p-3 pt-16">
       {relationships.length === 0 ? (
-        <div className="w-full h-full flex items-center justify-center p-6">
-          <div className="max-w-md text-center rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
+        <div className="flex h-full w-full items-center justify-center p-6">
+          <div className="max-w-md rounded-[var(--radius-md)] border border-[rgba(245,158,11,0.35)] bg-[var(--warning-dim)] px-4 py-3 text-center text-sm text-[var(--warning)]">
             No relationships were returned by backend for current upload. Re-upload all related CSVs and reload.
           </div>
         </div>

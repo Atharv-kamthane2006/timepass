@@ -158,239 +158,231 @@ export default function QualityScreen() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] relative overflow-hidden p-6 md:p-8">
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute -top-24 -left-24 w-80 h-80 rounded-full bg-primary/10 blur-3xl" />
-        <div className="absolute -bottom-28 right-10 w-80 h-80 rounded-full bg-accent/10 blur-3xl" />
-      </div>
+    <div className="h-screen overflow-y-auto bg-[var(--bg-base)] px-6 pb-10 pt-6">
+      <div className="mx-auto max-w-6xl">
+        <header className="mb-6 flex items-end justify-between border-b border-[var(--border-default)] pb-4">
+          <div>
+            <div className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+              <span>SchemaSense AI</span>
+              <span>/</span>
+              <span className="text-[var(--text-primary)]">Quality</span>
+            </div>
+            <h1 className="mt-1 text-xl font-semibold text-[var(--text-primary)]">Data Quality Overview</h1>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">Completeness, freshness, consistency, and integrity checks across all discovered tables.</p>
+          </div>
 
-      <div className="relative z-10 max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="mb-8 glass-panel p-6">
-          <h1 className="text-4xl font-bold mb-2 glow-text">Data Quality Overview</h1>
-          <p className="text-muted-foreground">Monitor the health and completeness of your datasets</p>
-        </div>
+          <div className="hidden gap-2 md:flex">
+            <span className="badge badge-muted">{data.length} tables</span>
+            <span className="badge badge-accent">Live Quality Monitor</span>
+          </div>
+        </header>
 
         {!loading && !error && <GlobalQualityReport />}
 
-        {/* Error State */}
         {error && (
-          <div className="mb-8 p-4 bg-yellow-500/10 border border-yellow-500/50 rounded-lg">
-            <p className="text-sm text-yellow-500">{error}</p>
+          <div className="mb-6 rounded-[var(--radius-md)] border border-[rgba(245,158,11,0.35)] bg-[var(--warning-dim)] px-4 py-3 text-sm text-[var(--warning)]">
+            {error}
           </div>
         )}
 
-        {/* Loading State */}
         {loading ? (
-          <div className="grid gap-6">
+          <div className="grid gap-4">
             {[...Array(4)].map((_, i) => (
               <SkeletonCard key={i} />
             ))}
           </div>
         ) : (
-          <div className="grid gap-8">
+          <div className="grid gap-6">
             {data.map((item, idx) => (
-              <div
+              <article
                 key={idx}
-                className={`glass-panel p-6 rounded-xl border border-border animate-slide-up bg-background/50`}
-                style={{ animationDelay: `${idx * 0.1}s` }}
+                className="card animate-fade-up rounded-[var(--radius-lg)] border border-[var(--border-default)] p-5"
+                style={{ animationDelay: `${idx * 0.08}s` }}
               >
-                {/* Table Context */}
-                <div className={`p-4 rounded-lg mb-2 flex flex-col md:flex-row md:items-center justify-between gap-4 ${getScoreBg(item.score)} border border-border/50`}>
-                  <div className="flex items-center gap-4">
-                    <div className={`${getScoreColor(item.score)}`}>
-                      {getScoreIcon(item.score)}
-                    </div>
+                <div className={`mb-3 flex flex-col items-start justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--border-default)] p-4 md:flex-row md:items-center ${getScoreBg(item.score)}`}>
+                  <div className="flex items-center gap-3">
+                    <span className={getScoreColor(item.score)}>{getScoreIcon(item.score)}</span>
                     <div>
-                      <h3 className="text-xl font-bold capitalize">
-                        {item.table?.replace(/_/g, " ")}
-                      </h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Table Health Score: <span className={`font-semibold ${getScoreColor(item.score)}`}>{item.score}/100</span>
+                      <h2 className="text-lg font-semibold capitalize text-[var(--text-primary)]">{item.table?.replace(/_/g, " ")}</h2>
+                      <p className="text-xs text-[var(--text-secondary)]">
+                        Table health score: <span className={`font-semibold ${getScoreColor(item.score)}`}>{item.score}/100</span>
                       </p>
                     </div>
                   </div>
-                  
-                  <div className="w-full md:w-1/3 h-2 bg-muted/40 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-700 ease-out ${
-                        item.score >= 85
-                          ? "bg-gradient-to-r from-green-500 to-green-400"
-                          : item.score >= 60
-                          ? "bg-gradient-to-r from-yellow-500 to-yellow-400"
-                          : "bg-gradient-to-r from-red-500 to-red-400"
-                      }`}
-                      style={{
-                        width: `${item.score}%`,
-                        animation: `slideUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards`,
-                      }}
-                    />
+
+                  <div className="w-full md:w-[280px]">
+                    <div className="mb-1 flex justify-between text-xs text-[var(--text-muted)]">
+                      <span>Health</span>
+                      <span>{item.score}%</span>
+                    </div>
+                    <div className="h-[6px] w-full overflow-hidden rounded-full bg-[var(--border-default)]">
+                      <div
+                        className={`h-full rounded-full transition-all duration-700 ease-out ${
+                          item.score >= 85
+                            ? "bg-[var(--success)]"
+                            : item.score >= 60
+                              ? "bg-[var(--warning)]"
+                              : "bg-[var(--danger)]"
+                        }`}
+                        style={{ width: `${item.score}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* Details Toggle Button */}
                 <button
                   onClick={() => toggleDetails(item.table)}
-                  className="flex items-center justify-center w-full py-2 mb-4 text-sm text-muted-foreground hover:text-foreground transition-colors bg-background/50 border border-border/50 rounded-lg"
+                  className="mb-4 flex w-full items-center justify-center gap-1 rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-input)] py-2 text-sm text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]"
                 >
                   {expandedTables[item.table] ? (
-                    <>Hide Details <ChevronUp className="ml-1 w-4 h-4" /></>
+                    <>
+                      Hide Details
+                      <ChevronUp className="h-4 w-4" />
+                    </>
                   ) : (
-                    <>Details <ChevronDown className="ml-1 w-4 h-4" /></>
+                    <>
+                      Details
+                      <ChevronDown className="h-4 w-4" />
+                    </>
                   )}
                 </button>
 
                 {expandedTables[item.table] && (
-                  <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="animate-fade-in">
                     {detailLoading[item.table] && (
-                      <div className="mb-4 text-xs text-muted-foreground">Loading detailed metrics...</div>
+                      <div className="mb-3 text-xs text-[var(--text-muted)]">Loading detailed metrics...</div>
                     )}
-                    {/* 3 Mini Sub-Metric Rows */}
-                    <div className="grid gap-4 mb-6 p-4 rounded-lg bg-background/30 border border-border/40">
-                      
-                      {/* COMPLETENESS */}
+
+                    <div className="mb-5 grid gap-3 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4">
                       <div>
-                        <div className="flex justify-between items-center text-sm mb-1">
-                          <span className="font-semibold text-muted-foreground">Completeness [{item.completeness}%]</span>
+                        <div className="mb-1 flex justify-between text-sm text-[var(--text-secondary)]">
+                          <span>Completeness</span>
+                          <span>{item.completeness}%</span>
                         </div>
-                        <div className="w-full h-[6px] bg-muted/40 rounded-full overflow-hidden mb-1">
-                          <div
-                            className={`h-full rounded-full transition-all duration-700 ease-out ${getSubMetricColor(item.completeness)}`}
-                            style={{ width: `${item.completeness}%` }}
-                          />
+                        <div className="h-[5px] w-full overflow-hidden rounded-full bg-[var(--border-default)]">
+                          <div className={`h-full rounded-full ${getSubMetricColor(item.completeness)}`} style={{ width: `${item.completeness}%` }} />
                         </div>
                       </div>
 
-                      {/* FRESHNESS */}
                       <div>
-                        <div className="flex justify-between items-center text-sm mb-1">
-                          <span className="font-semibold text-muted-foreground">
-                            Freshness {item.freshness !== null ? `[${item.freshness}%]` : ""}
-                          </span>
+                        <div className="mb-1 flex justify-between text-sm text-[var(--text-secondary)]">
+                          <span>Freshness {item.freshness !== null ? `(${item.freshness}%)` : ""}</span>
+                          <span className="text-xs text-[var(--text-muted)]">{getFreshnessLabel(item.freshness_days_ago) || "No date columns"}</span>
                         </div>
                         {item.freshness !== null ? (
-                          <>
-                            <div className="w-full h-[6px] bg-muted/40 rounded-full overflow-hidden mb-1">
-                              <div
-                                className={`h-full rounded-full transition-all duration-700 ease-out ${getSubMetricColor(item.freshness)}`}
-                                style={{ width: `${item.freshness}%` }}
-                              />
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {getFreshnessLabel(item.freshness_days_ago)}
-                            </div>
-                          </>
-                        ) : (
-                          <div className="text-xs text-muted-foreground italic">No date columns detected</div>
-                        )}
+                          <div className="h-[5px] w-full overflow-hidden rounded-full bg-[var(--border-default)]">
+                            <div className={`h-full rounded-full ${getSubMetricColor(item.freshness)}`} style={{ width: `${item.freshness}%` }} />
+                          </div>
+                        ) : null}
                       </div>
 
-                      {/* CONSISTENCY */}
                       <div>
-                        <div className="flex justify-between items-center text-sm mb-1">
-                          <span className="font-semibold text-muted-foreground">Consistency [{item.consistency}%]</span>
+                        <div className="mb-1 flex justify-between text-sm text-[var(--text-secondary)]">
+                          <span>Consistency</span>
+                          <span>{item.consistency}%</span>
                         </div>
-                        <div className="w-full h-[6px] bg-muted/40 rounded-full overflow-hidden mb-1">
-                          <div
-                            className={`h-full rounded-full transition-all duration-700 ease-out ${getSubMetricColor(item.consistency)}`}
-                            style={{ width: `${item.consistency}%` }}
-                          />
+                        <div className="h-[5px] w-full overflow-hidden rounded-full bg-[var(--border-default)]">
+                          <div className={`h-full rounded-full ${getSubMetricColor(item.consistency)}`} style={{ width: `${item.consistency}%` }} />
                         </div>
-                        <div className="mt-1">
-                          {item.orphan_issues && item.orphan_issues.length > 0 && item.orphan_issues.some(o => o.orphans > 0) ? (
-                            item.orphan_issues.filter(o => o.orphans > 0).map((issue, idx) => (
-                              <div key={idx} className="text-xs text-red-400 flex items-center mt-1">
-                                <AlertTriangle className="w-3 h-3 mr-1" />
-                                ⚠ {issue.col} → {issue.parent}: {issue.orphans} orphaned rows
-                              </div>
-                            ))
+                        <div className="mt-2">
+                          {item.orphan_issues && item.orphan_issues.length > 0 && item.orphan_issues.some((o) => o.orphans > 0) ? (
+                            item.orphan_issues
+                              .filter((o) => o.orphans > 0)
+                              .map((issue, orphanIdx) => (
+                                <div key={orphanIdx} className="mt-1 inline-flex items-center gap-1 rounded-full border border-[rgba(239,68,68,0.35)] bg-[var(--danger-dim)] px-2 py-1 text-xs text-[var(--danger)]">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  {issue.col} -&gt; {issue.parent}: {issue.orphans} orphaned
+                                </div>
+                              ))
                           ) : (
-                            <div className="text-xs text-green-500 flex items-center mt-1">
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                              ✓ No referential integrity violations
+                            <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-[rgba(16,185,129,0.35)] bg-[var(--success-dim)] px-2 py-1 text-xs text-[var(--success)]">
+                              <CheckCircle className="h-3 w-3" />
+                              No referential integrity violations
                             </div>
                           )}
                         </div>
                       </div>
-                      
                     </div>
 
-                    {/* Columns Table */}
-                {item.columns && item.columns.length > 0 ? (
-                  <div className="overflow-x-auto rounded-lg border border-border/50 bg-background/80">
-                    <table className="w-full text-sm text-left">
-                      <thead className="bg-muted/30 text-muted-foreground border-b border-border/50">
-                        <tr>
-                          <th className="px-4 py-3 font-semibold whitespace-nowrap">Column Name</th>
-                          <th className="px-4 py-3 font-semibold whitespace-nowrap">Type</th>
-                          <th className="px-4 py-3 font-semibold whitespace-nowrap">Null %</th>
-                          <th className="px-4 py-3 font-semibold whitespace-nowrap">Uniqueness</th>
-                          <th className="px-4 py-3 font-semibold whitespace-nowrap">Flags</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/20">
-                        {item.columns.map((col, colIdx) => {
-                          const rawNull = parseFloat((col.null_percent ?? col.null_percentage ?? 0).toString().replace('%','') || 0)
-                          const isPk = Boolean(col.is_pk || col.is_primary_key)
-                          const isFk = Boolean(col.is_fk || col.is_foreign_key)
-                          return (
-                            <tr key={colIdx} className="hover:bg-muted/10 transition-colors">
-                              <td className="px-4 py-3 font-medium text-foreground">{col.name}</td>
-                              <td className="px-4 py-3 text-muted-foreground">{col.type || 'VARCHAR'}</td>
-                              <td className="px-4 py-3" style={{
-                                color: rawNull > 20 ? '#ef4444' : rawNull > 5 ? '#f59e0b' : '#22c55e'
-                              }}>
-                                {rawNull}%
-                              </td>
-                              <td className="px-4 py-3">{col.uniqueness_percent ?? col.uniqueness ?? '100'}%</td>
-                              <td className="px-4 py-3 space-x-2">
-                                {isPk && <span className="px-2 py-0.5 rounded text-xs bg-primary/20 text-primary border border-primary/30">PK</span>}
-                                {isFk && <span className="px-2 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">FK</span>}
-                                {!isPk && !isFk && <span className="text-muted-foreground">-</span>}
-                              </td>
+                    {item.columns && item.columns.length > 0 ? (
+                      <div className="overflow-x-auto rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-input)]">
+                        <table className="w-full text-left text-sm">
+                          <thead className="border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-xs uppercase tracking-[0.1em] text-[var(--text-muted)]">
+                            <tr>
+                              <th className="whitespace-nowrap px-4 py-3 font-semibold">Column Name</th>
+                              <th className="whitespace-nowrap px-4 py-3 font-semibold">Type</th>
+                              <th className="whitespace-nowrap px-4 py-3 font-semibold">Null %</th>
+                              <th className="whitespace-nowrap px-4 py-3 font-semibold">Uniqueness</th>
+                              <th className="whitespace-nowrap px-4 py-3 font-semibold">Flags</th>
                             </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="text-sm text-muted-foreground italic p-4 text-center border border-border/30 rounded-lg">
-                    No column metrics available for this table.
+                          </thead>
+                          <tbody>
+                            {item.columns.map((col, colIdx) => {
+                              const rawNull = parseFloat((col.null_percent ?? col.null_percentage ?? 0).toString().replace("%", "") || 0)
+                              const isPk = Boolean(col.is_pk || col.is_primary_key)
+                              const isFk = Boolean(col.is_fk || col.is_foreign_key)
+                              return (
+                                <tr key={colIdx} className="border-b border-[var(--border-subtle)] transition hover:bg-[rgba(255,255,255,0.02)]">
+                                  <td className="px-4 py-3 font-medium text-[var(--text-primary)]">{col.name}</td>
+                                  <td className="px-4 py-3 text-[var(--text-secondary)]">{col.type || "VARCHAR"}</td>
+                                  <td
+                                    className="px-4 py-3 font-mono"
+                                    style={{
+                                      color: rawNull > 20 ? "#ef4444" : rawNull > 5 ? "#f59e0b" : "#22c55e",
+                                    }}
+                                  >
+                                    {rawNull}%
+                                  </td>
+                                  <td className="px-4 py-3 text-[var(--text-secondary)]">{col.uniqueness_percent ?? col.uniqueness ?? "100"}%</td>
+                                  <td className="space-x-2 px-4 py-3">
+                                    {isPk ? (
+                                      <span className="badge" style={{ background: "rgba(234,179,8,0.1)", color: "#eab308", border: "1px solid rgba(234,179,8,0.3)" }}>
+                                        PK
+                                      </span>
+                                    ) : null}
+                                    {isFk ? (
+                                      <span className="badge" style={{ background: "rgba(168,85,247,0.1)", color: "#a855f7", border: "1px solid rgba(168,85,247,0.3)" }}>
+                                        FK
+                                      </span>
+                                    ) : null}
+                                    {!isPk && !isFk ? <span className="text-[var(--text-muted)]">-</span> : null}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="rounded-[var(--radius-md)] border border-[var(--border-default)] p-4 text-center text-sm italic text-[var(--text-muted)]">
+                        No column metrics available for this table.
+                      </div>
+                    )}
                   </div>
                 )}
-                </div>
-                )}
-              </div>
+              </article>
             ))}
           </div>
         )}
 
-        {/* Summary Stats */}
         {!loading && (
-          <div className="mt-8 p-6 glass-panel rounded-xl">
-            <h3 className="font-bold mb-4">Overall Summary</h3>
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div>
-                <p className="text-3xl font-bold text-green-500">
-                  {data.filter((d) => d.score >= 85).length}
-                </p>
-                <p className="text-xs text-muted-foreground">Excellent</p>
+          <section className="mt-8 rounded-[var(--radius-lg)] border border-[var(--border-default)] bg-[var(--bg-surface)] p-6">
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Overall Summary</h3>
+            <div className="grid grid-cols-1 gap-3 text-center sm:grid-cols-3">
+              <div className="rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-elevated)] py-4">
+                <p className="text-3xl font-bold text-[var(--success)]">{data.filter((d) => d.score >= 85).length}</p>
+                <p className="text-xs text-[var(--text-muted)]">Excellent</p>
               </div>
-              <div>
-                <p className="text-3xl font-bold text-yellow-500">
-                  {data.filter((d) => d.score >= 60 && d.score < 85).length}
-                </p>
-                <p className="text-xs text-muted-foreground">Warning</p>
+              <div className="rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-elevated)] py-4">
+                <p className="text-3xl font-bold text-[var(--warning)]">{data.filter((d) => d.score >= 60 && d.score < 85).length}</p>
+                <p className="text-xs text-[var(--text-muted)]">Warning</p>
               </div>
-              <div>
-                <p className="text-3xl font-bold text-red-500">
-                  {data.filter((d) => d.score < 60).length}
-                </p>
-                <p className="text-xs text-muted-foreground">Critical</p>
+              <div className="rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-elevated)] py-4">
+                <p className="text-3xl font-bold text-[var(--danger)]">{data.filter((d) => d.score < 60).length}</p>
+                <p className="text-xs text-[var(--text-muted)]">Critical</p>
               </div>
             </div>
-          </div>
+          </section>
         )}
       </div>
     </div>

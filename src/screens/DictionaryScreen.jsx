@@ -1,9 +1,51 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { analyzeTableWithAI, getSchemaWithCache } from "../api/api"
+import { analyzeTableWithAI, getSchemaWithCache, streamColumnChat } from "../api/api"
 import { SkeletonTable } from "../components/Skeletons"
-import { RefreshCw, AlertCircle, Database, Columns, Rows, Search, Sparkles } from "lucide-react"
+import { AnimatePresence, motion } from "framer-motion"
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronRight,
+  Columns,
+  Database,
+  Link,
+  RefreshCw,
+  Search,
+  Send,
+  Shield,
+  Sparkles,
+  X,
+} from "lucide-react"
 
-const SCHEMA_CACHE_TTL_MS = 60_000
+const TABLE_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#3b82f6", "#ec4899", "#8b5cf6", "#06b6d4"]
+
+const TYPE_BADGE_MAP = {
+  numeric: {
+    bg: "rgba(59,130,246,0.1)",
+    color: "#60a5fa",
+    border: "rgba(59,130,246,0.25)",
+  },
+  categorical: {
+    bg: "rgba(139,92,246,0.1)",
+    color: "#a78bfa",
+    border: "rgba(139,92,246,0.25)",
+  },
+  date: {
+    bg: "rgba(6,182,212,0.1)",
+    color: "#22d3ee",
+    border: "rgba(6,182,212,0.25)",
+  },
+  boolean: {
+    bg: "rgba(245,158,11,0.1)",
+    color: "#fbbf24",
+    border: "rgba(245,158,11,0.25)",
+  },
+  text: {
+    bg: "rgba(148,163,184,0.08)",
+    color: "#94a3b8",
+    border: "rgba(148,163,184,0.2)",
+  },
+}
 
 function getColumnName(col, idx) {
   if (typeof col === "string") return col
@@ -13,6 +55,11 @@ function getColumnName(col, idx) {
 function getColumnType(col) {
   if (typeof col === "string") return "Unknown"
   return col?.type || "Unknown"
+}
+
+function getColumnDescription(col) {
+  if (typeof col === "string") return ""
+  return col?.ai_description || col?.description || col?.meaning || col?.summary || ""
 }
 
 function isColumnPk(col) {
@@ -61,6 +108,92 @@ function getColumnRawName(col, idx) {
   return col?.name || col?.display_name || `column_${idx + 1}`
 }
 
+function getNullPercent(col) {
+  if (!col || typeof col === "string") return null
+  const raw = col?.null_percentage ?? col?.null_percent ?? col?.nullPct
+  if (raw === undefined || raw === null || raw === "") {
+    if (typeof col?.nullable === "boolean") return col.nullable ? 100 : 0
+    return null
+  }
+  const num = Number(raw)
+  return Number.isFinite(num) ? Math.max(0, Math.min(100, num)) : null
+}
+
+function getHealthScore(table) {
+  const explicit =
+    table?.health_score ??
+    table?.quality_score ??
+    table?.score ??
+    table?.quality?.score ??
+    table?.quality?.health_score
+  const numeric = Number(explicit)
+  if (Number.isFinite(numeric)) return Math.max(0, Math.min(100, Math.round(numeric)))
+
+  const cols = Array.isArray(table?.columns) ? table.columns : []
+  if (!cols.length) return 0
+  const avgNull = cols
+    .map((col) => getNullPercent(col))
+    .filter((v) => v !== null)
+    .reduce((a, b, _, arr) => a + b / arr.length, 0)
+  return Math.max(0, Math.min(100, Math.round(100 - avgNull)))
+}
+
+function getHealthBadge(score) {
+  if (score >= 85) return "badge badge-success"
+  if (score >= 70) return "badge badge-warning"
+  return "badge badge-danger"
+}
+
+function getLastUpdated(table) {
+  const raw =
+    table?.last_updated ||
+    table?.updated_at ||
+    table?.freshness?.last_updated ||
+    table?.quality?.freshness?.last_updated ||
+    null
+  if (!raw) return null
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleDateString()
+}
+
+function getTypeFamily(type) {
+  const value = String(type || "").toLowerCase()
+  if (/int|float|double|decimal|numeric|number|real|bigint|smallint/.test(value)) return "numeric"
+  if (/date|time|timestamp/.test(value)) return "date"
+  if (/bool|bit/.test(value)) return "boolean"
+  if (/enum|category|status/.test(value)) return "categorical"
+  return "text"
+}
+
+function CountUpValue({ value, formatter = (v) => v.toLocaleString(), className = "" }) {
+  const [display, setDisplay] = useState(0)
+
+  useEffect(() => {
+    const to = Number(value) || 0
+    const from = 0
+    const duration = 800
+    const start = performance.now()
+    let rafId = null
+
+    const animate = (now) => {
+      const progress = Math.min((now - start) / duration, 1)
+      const current = from + (to - from) * progress
+      setDisplay(current)
+      if (progress < 1) {
+        rafId = requestAnimationFrame(animate)
+      }
+    }
+
+    rafId = requestAnimationFrame(animate)
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId)
+    }
+  }, [value])
+
+  return <span className={className}>{formatter(display)}</span>
+}
+
 function looksLikeSqlExecutionMessage(text) {
   const t = String(text || "").toLowerCase()
   return (
@@ -70,6 +203,10 @@ function looksLikeSqlExecutionMessage(text) {
     t.includes("returning fallback data") ||
     t.includes("failed even after self-correction")
   )
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function buildLocalReasoning(table) {
@@ -138,13 +275,127 @@ export default function DictionaryScreen() {
   const [aiError, setAiError] = useState("")
   const [summaryRole, setSummaryRole] = useState("business")
   const [summaryRefreshTick, setSummaryRefreshTick] = useState(0)
+  const [columnDrawer, setColumnDrawer] = useState(null)
+  const [columnContext, setColumnContext] = useState(null)
+  const [columnQuestion, setColumnQuestion] = useState("")
+  const [columnChatMessages, setColumnChatMessages] = useState([])
+  const [columnChatLoading, setColumnChatLoading] = useState(false)
+  const [columnChatError, setColumnChatError] = useState("")
   const reasoningRunRef = useRef(0)
+  const streamAbortRef = useRef(null)
 
   const getBusinessSummary = (table) =>
     table?.business_summary || table?.businessSummary || table?.summaries?.business || ""
 
   const getDeveloperSummary = (table) =>
     table?.developer_summary || table?.developerSummary || table?.summaries?.developer || ""
+
+  const openColumnDrawer = (col, idx) => {
+    const columnName = getColumnRawName(col, idx)
+    setColumnDrawer({
+      table: activeTable?.name,
+      column: columnName,
+      raw: col,
+      rowCount: Number(activeTable?.row_count ?? activeTable?.rowCount ?? 0),
+    })
+    setColumnContext({
+      row_count: Number(activeTable?.row_count ?? activeTable?.rowCount ?? 0),
+      data_type: getColumnType(col),
+      null_pct: col?.null_percentage ?? col?.null_percent ?? null,
+      unique_count: col?.unique_count ?? null,
+      uniqueness_pct: col?.uniqueness_pct ?? col?.uniqueness_percent ?? col?.uniqueness ?? null,
+      fk_reference: getColumnFk(col) !== "—" ? getColumnFk(col) : null,
+      top_values: [],
+      sample_values: getColumnSample(col) !== "—" ? [getColumnSample(col)] : [],
+    })
+    setColumnQuestion("")
+    setColumnChatError("")
+    setColumnChatMessages([])
+  }
+
+  const closeColumnDrawer = () => {
+    if (streamAbortRef.current) {
+      streamAbortRef.current.abort()
+      streamAbortRef.current = null
+    }
+    setColumnDrawer(null)
+    setColumnContext(null)
+    setColumnQuestion("")
+    setColumnChatLoading(false)
+    setColumnChatError("")
+  }
+
+  const sendColumnQuestion = async () => {
+    const q = columnQuestion.trim()
+    if (!q || !columnDrawer || columnChatLoading) return
+
+    setColumnChatError("")
+    setColumnQuestion("")
+    setColumnChatLoading(true)
+
+    const assistantId = Date.now()
+    setColumnChatMessages((prev) => [
+      ...prev,
+      { role: "user", content: q },
+      { id: assistantId, role: "assistant", content: "" },
+    ])
+
+    const appendAssistant = (delta) => {
+      if (!delta) return
+      setColumnChatMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId ? { ...m, content: `${m.content || ""}${delta}` } : m
+        )
+      )
+    }
+
+    const controller = new AbortController()
+    streamAbortRef.current = controller
+
+    try {
+      await streamColumnChat(
+        {
+          table: columnDrawer.table,
+          column: columnDrawer.column,
+          question: q,
+        },
+        {
+          signal: controller.signal,
+          onMeta: (meta) => {
+            if (meta) setColumnContext((prev) => ({ ...(prev || {}), ...meta }))
+          },
+          onDelta: (delta) => appendAssistant(delta),
+          onDone: (payload) => {
+            const finalAnswer = payload?.answer || payload?.final || payload?.message || ""
+            setColumnChatMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      content: m.content || finalAnswer,
+                      diagnostics: payload?.diagnostics || m.diagnostics,
+                    }
+                  : m
+              )
+            )
+          },
+          onError: (message) => {
+            setColumnChatError(String(message || "Column chat streaming failed."))
+          },
+        }
+      )
+    } catch (err) {
+      if (err?.name !== "AbortError") {
+        console.error("Column stream error:", err)
+        setColumnChatError("Failed to stream column answer.")
+      }
+    } finally {
+      if (streamAbortRef.current === controller) {
+        streamAbortRef.current = null
+      }
+      setColumnChatLoading(false)
+    }
+  }
 
   async function fetchSchema(forceFresh = false) {
     try {
@@ -153,7 +404,28 @@ export default function DictionaryScreen() {
 
       const selectedName = activeTable?.name
 
-      const res = await getSchemaWithCache({ force: forceFresh })
+      const retryDelaysMs = [0, 900, 1800]
+      let res = null
+      let lastErr = null
+
+      for (let attempt = 0; attempt < retryDelaysMs.length; attempt += 1) {
+        if (retryDelaysMs[attempt] > 0) {
+          await sleep(retryDelaysMs[attempt])
+        }
+
+        try {
+          res = await getSchemaWithCache({ force: forceFresh || attempt > 0 })
+          lastErr = null
+          break
+        } catch (err) {
+          lastErr = err
+        }
+      }
+
+      if (lastErr) {
+        throw lastErr
+      }
+
       console.log("Schema response:", res.data)
 
       const nextTables = Array.isArray(res?.data?.tables) ? res.data.tables : []
@@ -168,7 +440,16 @@ export default function DictionaryScreen() {
 
     } catch (err) {
       console.error(err)
-      setError("Failed to load schema. Please try again.")
+      const status = err?.response?.status
+      if (status === 401 || status === 403) {
+        setError("Session expired while loading schema. Please sign in again.")
+      } else if (status >= 500) {
+        setError("Backend is still preparing schema metadata. Please refresh in a moment.")
+      } else if ((err?.message || "").toLowerCase().includes("timeout")) {
+        setError("Schema request timed out. Please refresh once backend ingest completes.")
+      } else {
+        setError("Failed to load schema. Please try again.")
+      }
     } finally {
       setLoading(false)
     }
@@ -176,6 +457,14 @@ export default function DictionaryScreen() {
 
   useEffect(() => {
     fetchSchema()
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort()
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -294,277 +583,623 @@ export default function DictionaryScreen() {
     })
   }, [activeColumns, columnSearch])
 
+  const relationships = useMemo(() => {
+    if (!activeTable) return []
+    return activeColumns
+      .map((col, idx) => {
+        const sourceCol = getColumnRawName(col, idx)
+        const target = getColumnFk(col)
+        if (target === "—" || target === "Yes") return null
+        return {
+          id: `${sourceCol}-${target}`,
+          source: `${activeTable.name}.${sourceCol}`,
+          target,
+          confidence: Number(col?.confidence ?? col?.fk_confidence ?? col?.relationship_confidence ?? 0.82),
+        }
+      })
+      .filter(Boolean)
+  }, [activeColumns, activeTable])
+
   const stats = useMemo(() => {
     const totalRows = Number(activeTable?.row_count ?? activeTable?.rowCount ?? 0)
     const totalColumns = activeColumns.length
     const nullableColumns = activeColumns.filter((c) => isColumnNullable(c) !== false).length
-    return { totalRows, totalColumns, nullableColumns }
+    const primaryKeys = activeColumns.filter((c) => isColumnPk(c)).length
+    const avgNull = activeColumns
+      .map((col) => getNullPercent(col))
+      .filter((v) => v !== null)
+      .reduce((acc, curr, _, arr) => acc + curr / arr.length, 0)
+    return { totalRows, totalColumns, nullableColumns, primaryKeys, avgNull: Number(avgNull || 0) }
   }, [activeTable, activeColumns])
 
-  return (
-    <div className="h-[calc(100vh-4rem)] relative overflow-hidden flex">
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute -top-24 right-8 w-72 h-72 rounded-full bg-primary/10 blur-3xl" />
-        <div className="absolute -bottom-32 left-12 w-80 h-80 rounded-full bg-accent/10 blur-3xl" />
-      </div>
+  const activeHealth = getHealthScore(activeTable)
+  const activeColor = TABLE_COLORS[Math.max(0, tables.findIndex((t) => t.name === activeTable?.name)) % TABLE_COLORS.length] || TABLE_COLORS[0]
+  const reasoningSteps = [
+    {
+      id: 1,
+      name: "Schema ingestion",
+      status: activeTable ? "complete" : "pending",
+    },
+    {
+      id: 2,
+      name: "Role summary synthesis",
+      status: aiLoading ? "active" : aiReasoning ? "complete" : "pending",
+    },
+    {
+      id: 3,
+      name: "Column copilot stream",
+      status: columnChatLoading ? "active" : columnChatMessages.length > 0 ? "complete" : "pending",
+    },
+  ]
 
-      {/* Sidebar */}
-      <div className="relative z-10 w-72 m-4 mr-0 glass-panel p-5 overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
+  return (
+    <div className="h-screen overflow-hidden bg-[var(--bg-base)]">
+      <header className="flex h-[76px] items-center justify-between border-b border-[var(--border-default)] px-6">
+        <div className="flex items-center gap-3">
           <div>
-            <h3 className="text-lg font-bold">Data Dictionary</h3>
-            <p className="text-xs text-muted-foreground">{tables.length} tables discovered</p>
+            <div className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+              <span>SchemaSense AI</span>
+              <span>/</span>
+              <span className="text-[var(--text-primary)]">Dictionary</span>
+            </div>
+            <div className="mt-1 flex items-center gap-2">
+              <h1 className="text-base font-semibold text-[var(--text-primary)]">Dictionary</h1>
+              <span className="badge badge-muted">{tables.length} tables</span>
+            </div>
           </div>
           <button
             onClick={() => fetchSchema(true)}
             disabled={loading}
-            className="p-2 hover:bg-secondary rounded-lg transition-colors disabled:opacity-50"
+            className="grid h-8 w-8 place-items-center rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-secondary)] transition hover:text-[var(--text-primary)] disabled:opacity-50"
             title="Refresh schema"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
           </button>
         </div>
 
-        <div className="mb-4 relative">
-          <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+        <div className="relative w-[200px]">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--text-muted)]" />
           <input
             value={tableSearch}
             onChange={(e) => setTableSearch(e.target.value)}
-            placeholder="Search tables..."
-            className="w-full pl-9 pr-3 py-2 rounded-lg bg-background/70 border border-border/60 text-sm focus:outline-none focus:border-primary"
+            placeholder="Search tables"
+            className="h-9 w-full rounded-full border border-[var(--border-default)] bg-[var(--bg-input)] pl-9 pr-3 font-mono text-sm text-[var(--text-primary)] outline-none transition focus:border-[var(--accent)]"
           />
         </div>
+      </header>
 
-        {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg flex gap-2">
-            <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-red-500">{error}</p>
-          </div>
-        )}
+      <div className="flex h-[calc(100vh-76px)] min-h-0">
+        <aside className="w-[240px] overflow-y-auto border-r border-[var(--border-default)] bg-[var(--bg-surface)] pt-3">
+          <div className="px-4 pb-2 text-xs uppercase tracking-[0.16em] text-[var(--text-muted)]">Tables</div>
 
-        {loading ? (
-          <div className="space-y-2">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-10 bg-border/80 rounded animate-skeleton"></div>
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {filteredTables.map((table) => (
-              <button
-                key={table.id || table.name}
-                onClick={() => setActiveTable(table)}
-                className={`w-full text-left px-3 py-2 rounded-lg border transition-all duration-200 ${
-                  activeTable?.name === table.name
-                    ? "bg-primary/20 border-primary/40 text-primary"
-                    : "border-border/40 text-muted-foreground hover:bg-secondary/70 hover:border-border"
-                }`}
-              >
-                <p className="font-medium truncate">{table.display_name || table.name}</p>
-                <p className="text-[11px] opacity-70">{Number(table.row_count ?? table.rowCount ?? 0).toLocaleString()} rows</p>
-              </button>
-            ))}
-            {filteredTables.length === 0 && (
-              <p className="text-xs text-muted-foreground px-2 py-2">No table matches your search.</p>
-            )}
-          </div>
-        )}
-      </div>
+          {error ? (
+            <div className="mx-3 mb-3 flex items-start gap-2 rounded-[var(--radius-md)] border border-[rgba(239,68,68,0.28)] bg-[var(--danger-dim)] px-2.5 py-2 text-[11px] text-[var(--danger)]">
+              <AlertCircle className="mt-[1px] h-3.5 w-3.5 shrink-0" />
+              {error}
+            </div>
+          ) : null}
 
-      {/* Main Panel */}
-      <div className="relative z-10 flex-1 p-4 pl-5 overflow-y-auto">
-        {!activeTable ? (
-          <div className="glass-panel p-8 text-center">
-            <Database className="w-10 h-10 mx-auto mb-3 text-primary" />
-            <p className="text-muted-foreground">Select a table to view columns and metadata</p>
-          </div>
-        ) : (
-          <div className="animate-fade-in space-y-4">
-            <div className="glass-panel p-5">
-              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold mb-1">
-                    {activeTable.display_name || activeTable.name}
-                  </h2>
-                  <p className="text-muted-foreground">
-                    Table schema details and inferred column metadata
-                  </p>
-                </div>
-                <div className="inline-flex rounded-lg border border-border/60 bg-background/70 p-1">
-                  <button
-                    onClick={() => setSummaryRole("business")}
-                    className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                      summaryRole === "business"
-                        ? "bg-primary/20 text-primary"
-                        : "text-muted-foreground hover:text-foreground"
+          {loading ? (
+            <div className="space-y-2 px-3 pt-1">
+              {[...Array(5)].map((_, idx) => (
+                <div key={idx} className="h-14 rounded-[var(--radius-md)] animate-skeleton" />
+              ))}
+            </div>
+          ) : (
+            <div>
+              {filteredTables.map((table, idx) => {
+                const score = getHealthScore(table)
+                const active = activeTable?.name === table.name
+                const color = TABLE_COLORS[idx % TABLE_COLORS.length]
+                return (
+                  <motion.button
+                    key={table.id || table.name}
+                    onClick={() => setActiveTable(table)}
+                    className={`relative flex h-14 w-full items-center px-4 text-left transition ${
+                      active
+                        ? "bg-[var(--bg-elevated)]"
+                        : "hover:bg-[rgba(255,255,255,0.025)]"
                     }`}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.26, delay: idx * 0.05 }}
                   >
-                    Business
-                  </button>
-                  <button
-                    onClick={() => setSummaryRole("developer")}
-                    className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                      summaryRole === "developer"
-                        ? "bg-primary/20 text-primary"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    Developer
-                  </button>
-                </div>
-              </div>
+                    <span
+                      className="absolute left-0 top-0 h-full w-[3px]"
+                      style={{ background: color, opacity: active ? 1 : 0.5 }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-[var(--text-primary)]">
+                        {table.display_name || table.name}
+                      </p>
+                      <p className="font-mono text-xs text-[var(--text-muted)]">
+                        {Number(table.row_count ?? table.rowCount ?? 0).toLocaleString()} rows
+                      </p>
+                    </div>
+                    <span className={getHealthBadge(score)}>{score}</span>
+                  </motion.button>
+                )
+              })}
+              {filteredTables.length === 0 ? (
+                <div className="px-4 py-4 text-xs text-[var(--text-muted)]">No table matches your search.</div>
+              ) : null}
+            </div>
+          )}
+        </aside>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="rounded-lg bg-background/70 border border-border/60 p-3">
-                  <p className="text-[11px] text-muted-foreground mb-1 inline-flex items-center gap-1"><Rows className="w-3.5 h-3.5" />Rows</p>
-                  <p className="font-semibold">{stats.totalRows.toLocaleString()}</p>
-                </div>
-                <div className="rounded-lg bg-background/70 border border-border/60 p-3">
-                  <p className="text-[11px] text-muted-foreground mb-1 inline-flex items-center gap-1"><Columns className="w-3.5 h-3.5" />Columns</p>
-                  <p className="font-semibold">{stats.totalColumns}</p>
-                </div>
-                <div className="rounded-lg bg-background/70 border border-border/60 p-3">
-                  <p className="text-[11px] text-muted-foreground mb-1">Nullable</p>
-                  <p className="font-semibold">{stats.nullableColumns}</p>
-                </div>
+        <main className="flex-1 overflow-y-auto px-6 py-6">
+          {!activeTable ? (
+            <div className="card grid min-h-[280px] place-items-center">
+              <div className="text-center">
+                <Database className="mx-auto mb-3 h-8 w-8 text-[var(--text-muted)]" />
+                <p className="text-sm text-[var(--text-secondary)]">Select a table to view schema intelligence.</p>
               </div>
             </div>
-
-            {loading ? (
-              <SkeletonTable />
-            ) : (
-              <div className="overflow-x-auto glass-panel p-4">
-                <div className="mb-3 relative max-w-sm">
-                  <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    value={columnSearch}
-                    onChange={(e) => setColumnSearch(e.target.value)}
-                    placeholder="Search columns..."
-                    className="w-full pl-9 pr-3 py-2 rounded-lg bg-background/70 border border-border/60 text-sm focus:outline-none focus:border-primary"
-                  />
+          ) : (
+            <AnimatePresence mode="wait">
+              <motion.section
+                key={activeTable.name}
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -8 }}
+                transition={{ duration: 0.22 }}
+              >
+                <div className="flex items-start justify-between gap-4 border-l-[3px] pl-4" style={{ borderLeftColor: activeColor }}>
+                  <div>
+                    <h2 className="text-2xl font-bold text-[var(--text-primary)]">{activeTable.display_name || activeTable.name}</h2>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="badge badge-muted">{stats.totalRows.toLocaleString()} rows</span>
+                      <span className="badge badge-muted">{stats.totalColumns} columns</span>
+                      <span className={getHealthBadge(activeHealth)}>Health: {activeHealth}</span>
+                      {getLastUpdated(activeTable) ? <span className="badge badge-muted">Last updated: {getLastUpdated(activeTable)}</span> : null}
+                    </div>
+                  </div>
                 </div>
 
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left py-3 px-4 font-semibold text-muted-foreground">Column</th>
-                      <th className="text-left py-3 px-4 font-semibold text-muted-foreground">Type</th>
-                      <th className="text-left py-3 px-4 font-semibold text-muted-foreground">Primary Key</th>
-                        <th className="text-left py-3 px-4 font-semibold text-muted-foreground">Nulls</th>
-                      <th className="text-left py-3 px-4 font-semibold text-muted-foreground">Foreign Key</th>
-                      <th className="text-left py-3 px-4 font-semibold text-muted-foreground">Default</th>
-                      <th className="text-left py-3 px-4 font-semibold text-muted-foreground">Sample</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredColumns.map((col, idx) => (
-                      <tr key={idx} className="border-b border-border/50 hover:bg-secondary/40 transition-colors">
-                        <td className="py-3 px-4 font-mono text-primary">{getColumnName(col, idx)}</td>
-                        <td className="py-3 px-4 text-muted-foreground">{getColumnType(col)}</td>
-                        <td className="py-3 px-4">
-                          {isColumnPk(col) ? (
-                            <span className="text-xs px-2 py-1 rounded bg-primary/15 text-primary">Yes</span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">No</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">
-                            {col?.null_percentage !== undefined ? (
-                              <span className={`text-xs px-2 py-1 rounded ${
-                                col.null_percentage === 0 ? "bg-green-500/10 text-green-500" : "bg-yellow-500/10 text-yellow-500"
-                              }`}>
-                                {col.null_percentage === 0 ? "0%" : `${col.null_percentage}% null`}
-                              </span>
-                            ) : isColumnNullable(col) === null ? (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          ) : (
-                            <span className={`text-xs px-2 py-1 rounded ${
-                              isColumnNullable(col) === false ? "bg-green-500/10 text-green-500" : "bg-yellow-500/10 text-yellow-500"
-                            }`}>
-                              {isColumnNullable(col) === false ? "No" : "Yes"}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">
-                          {(() => {
-                            const fkVal = getColumnFk(col)
-                            if (fkVal === "—") return <span className="text-xs text-muted-foreground">—</span>
-                            if (fkVal === "Yes") return <span className="text-xs px-2 py-1 rounded bg-indigo-500/15 text-indigo-400">Yes</span>
-                            return <span className="text-xs px-2 py-1 rounded border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 font-mono tracking-tight">{fkVal}</span>
-                          })()}
-                        </td>
-                        <td className="py-3 px-4 text-muted-foreground font-mono text-xs">{getColumnDefault(col)}</td>
-                        <td className="py-3 px-4 text-muted-foreground text-xs">{getColumnSample(col)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                {filteredColumns.length === 0 && (
-                  <div className="py-8 text-center text-sm text-muted-foreground">
-                    No columns found for your search.
+                <div className="mt-6 rounded-[var(--radius-lg)] border border-[var(--border-default)] border-l-[3px] border-l-[var(--accent)] bg-[var(--bg-elevated)] px-5 py-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                      <Sparkles className="h-3.5 w-3.5 text-[var(--accent-bright)]" />
+                      <span>AI Summary</span>
+                    </div>
+                    <div className="inline-flex rounded-full border border-[var(--border-default)] p-1">
+                      <button
+                        onClick={() => setSummaryRole("business")}
+                        className={`rounded-full px-3 py-1 text-xs ${
+                          summaryRole === "business"
+                            ? "border border-[var(--border-accent)] bg-[var(--accent-dim)] text-[var(--accent-bright)]"
+                            : "border border-transparent text-[var(--text-muted)]"
+                        }`}
+                      >
+                        Business
+                      </button>
+                      <button
+                        onClick={() => setSummaryRole("developer")}
+                        className={`rounded-full px-3 py-1 text-xs ${
+                          summaryRole === "developer"
+                            ? "border border-[var(--border-accent)] bg-[var(--accent-dim)] text-[var(--accent-bright)]"
+                            : "border border-transparent text-[var(--text-muted)]"
+                        }`}
+                      >
+                        Developer
+                      </button>
+                    </div>
                   </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
 
-      {/* AI Reasoning Panel */}
-      <div className="relative z-10 w-[360px] m-4 ml-0 glass-panel p-5 overflow-y-auto hidden lg:block">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold inline-flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-primary" />
-            {summaryRole === "business" ? "Business Summary" : "Developer Summary"}
-          </h3>
-          {activeTable && (
-            <button
-              onClick={() => {
-                if (activeTable) {
-                  const next = tables.find((t) => t.name === activeTable.name)
-                  if (next) setActiveTable({ ...next })
-                }
-                setSummaryRefreshTick((v) => v + 1)
-              }}
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
-              Refresh
-            </button>
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={`${summaryRole}-${activeTable.name}-${summaryRefreshTick}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="mt-2"
+                    >
+                      {aiLoading && !aiDisplay ? (
+                        <div className="space-y-2">
+                          <div className="h-3 w-[80%] rounded skeleton bg-[var(--bg-overlay)]" />
+                          <div className="h-3 w-[60%] rounded skeleton bg-[var(--bg-overlay)]" />
+                        </div>
+                      ) : (
+                        <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{aiDisplay || "Waiting for analysis..."}</p>
+                      )}
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-surface)] px-4 py-3">
+                    <p className="mb-1 inline-flex items-center gap-1 text-xs uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                      <Database className="h-3.5 w-3.5" />
+                      Rows
+                    </p>
+                    <CountUpValue
+                      value={stats.totalRows}
+                      className="font-mono text-2xl font-bold text-[var(--success)]"
+                    />
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">Total records in this table</p>
+                  </div>
+                  <div className="rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-surface)] px-4 py-3">
+                    <p className="mb-1 inline-flex items-center gap-1 text-xs uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                      <Columns className="h-3.5 w-3.5" />
+                      Columns
+                    </p>
+                    <CountUpValue
+                      value={stats.totalColumns}
+                      className="font-mono text-2xl font-bold text-[var(--info)]"
+                    />
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">Documented schema fields</p>
+                  </div>
+                  <div className="rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-surface)] px-4 py-3">
+                    <p className="mb-1 inline-flex items-center gap-1 text-xs uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                      <Shield className="h-3.5 w-3.5" />
+                      Health
+                    </p>
+                    <CountUpValue
+                      value={activeHealth}
+                      className={`font-mono text-2xl font-bold ${
+                        activeHealth >= 85
+                          ? "text-[var(--success)]"
+                          : activeHealth >= 70
+                            ? "text-[var(--warning)]"
+                            : "text-[var(--danger)]"
+                      }`}
+                    />
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">Composite quality score</p>
+                  </div>
+                  <div className="rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-surface)] px-4 py-3">
+                    <p className="mb-1 inline-flex items-center gap-1 text-xs uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                      <ChevronRight className="h-3.5 w-3.5" />
+                      Avg Null%
+                    </p>
+                    <CountUpValue
+                      value={stats.avgNull}
+                      formatter={(v) => `${v.toFixed(1)}%`}
+                      className={`font-mono text-2xl font-bold ${
+                        stats.avgNull < 5
+                          ? "text-[var(--success)]"
+                          : stats.avgNull <= 20
+                            ? "text-[var(--warning)]"
+                            : "text-[var(--danger)]"
+                      }`}
+                    />
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">Average null density</p>
+                  </div>
+                </div>
+
+                <div className="mt-6 rounded-[var(--radius-lg)] border border-[var(--border-default)]">
+                  <div className="border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-4 py-3">
+                    <div className="relative w-full max-w-[260px]">
+                      <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--text-muted)]" />
+                      <input
+                        value={columnSearch}
+                        onChange={(e) => setColumnSearch(e.target.value)}
+                        placeholder="Search columns"
+                        className="h-8 w-full rounded-full border border-[var(--border-default)] bg-[var(--bg-input)] pl-9 pr-3 font-mono text-xs text-[var(--text-primary)] outline-none transition focus:border-[var(--accent)]"
+                      />
+                    </div>
+                  </div>
+
+                  {loading ? (
+                    <div className="p-4">
+                      <SkeletonTable />
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-separate border-spacing-0 text-sm">
+                        <thead>
+                          <tr className="h-9 bg-[var(--bg-elevated)] text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                            <th className="px-4 text-left">Name</th>
+                            <th className="px-4 text-left">Type</th>
+                            <th className="px-4 text-left">AI Description</th>
+                            <th className="px-4 text-left">Null%</th>
+                            <th className="px-4 text-left">Flags</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredColumns.map((col, idx) => {
+                            const name = getColumnName(col, idx)
+                            const type = getColumnType(col)
+                            const description = getColumnDescription(col)
+                            const nullPct = getNullPercent(col)
+                            const fk = getColumnFk(col)
+                            const family = getTypeFamily(type)
+                            const chip = TYPE_BADGE_MAP[family]
+                            const nullColor =
+                              nullPct === null
+                                ? "var(--text-muted)"
+                                : nullPct < 5
+                                  ? "var(--success)"
+                                  : nullPct <= 20
+                                    ? "var(--warning)"
+                                    : "var(--danger)"
+
+                            return (
+                              <motion.tr
+                                key={`${name}-${idx}`}
+                                className="h-12 cursor-pointer border-b border-[var(--border-subtle)] transition hover:bg-[rgba(255,255,255,0.02)]"
+                                onClick={() => openColumnDrawer(col, idx)}
+                                initial={{ opacity: 0, y: 4 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.2, delay: idx * 0.03 }}
+                              >
+                                <td className="px-4 font-mono text-sm font-medium text-[var(--accent-bright)]">
+                                  {isColumnPk(col) ? <span className="mr-1 text-[#eab308]">◆</span> : null}
+                                  {name}
+                                </td>
+                                <td className="px-4">
+                                  <span
+                                    className="inline-flex rounded-full border px-2 py-[2px] font-mono text-[11px]"
+                                    style={{
+                                      background: chip.bg,
+                                      borderColor: chip.border,
+                                      color: chip.color,
+                                    }}
+                                  >
+                                    {type}
+                                  </span>
+                                </td>
+                                <td className="max-w-[260px] px-4 text-xs text-[var(--text-secondary)]">
+                                  {description ? (
+                                    <span className="block truncate" title={description}>
+                                      {description}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-block h-2.5 w-28 rounded skeleton bg-[var(--bg-overlay)]" />
+                                  )}
+                                </td>
+                                <td className="px-4">
+                                  <div className="w-20">
+                                    <div className="h-[3px] overflow-hidden rounded bg-[var(--border-default)]">
+                                      <div
+                                        className="h-[3px]"
+                                        style={{
+                                          width: `${nullPct ?? 0}%`,
+                                          background: nullColor,
+                                        }}
+                                      />
+                                    </div>
+                                    <p className="mt-1 text-right font-mono text-xs text-[var(--text-muted)]">
+                                      {nullPct === null ? "--" : `${nullPct.toFixed(1)}%`}
+                                    </p>
+                                  </div>
+                                </td>
+                                <td className="px-4">
+                                  <div className="flex flex-wrap gap-1">
+                                    {isColumnPk(col) ? (
+                                      <span className="badge" style={{ background: "rgba(234,179,8,0.1)", color: "#eab308", border: "1px solid rgba(234,179,8,0.3)" }}>
+                                        PK
+                                      </span>
+                                    ) : null}
+                                    {fk !== "—" ? (
+                                      <span className="badge" style={{ background: "rgba(168,85,247,0.1)", color: "#a855f7", border: "1px solid rgba(168,85,247,0.3)" }}>
+                                        FK
+                                      </span>
+                                    ) : null}
+                                    {isColumnNullable(col) === false ? (
+                                      <span className="badge badge-muted">NN</span>
+                                    ) : null}
+                                  </div>
+                                </td>
+                              </motion.tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                      {filteredColumns.length === 0 ? (
+                        <div className="px-4 py-8 text-center text-sm text-[var(--text-muted)]">No columns found for your search.</div>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-8">
+                  <h3 className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-[var(--text-primary)]">
+                    <Link className="h-4 w-4 text-[var(--accent-bright)]" />
+                    Detected Relationships
+                  </h3>
+                  <div className="space-y-2">
+                    {relationships.length === 0 ? (
+                      <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--border-accent)] bg-[var(--bg-surface)] px-4 py-3 text-sm text-[var(--text-muted)]">
+                        No explicit FK mappings were detected for this table.
+                      </div>
+                    ) : (
+                      relationships.map((rel) => (
+                        <div
+                          key={rel.id}
+                          className="flex items-center gap-3 rounded-[var(--radius-md)] border border-dashed border-[var(--border-accent)] bg-[var(--bg-surface)] px-4 py-3"
+                        >
+                          <span className="font-mono text-sm text-[var(--accent)]">{rel.source}</span>
+                          <span className="text-[var(--text-muted)]">-&gt;</span>
+                          <span className="font-mono text-sm text-[var(--accent-bright)]">{rel.target}</span>
+                          <span className="ml-auto badge badge-info">{Math.round((rel.confidence || 0) * 100)}%</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </motion.section>
+            </AnimatePresence>
           )}
-        </div>
+        </main>
 
-        {!activeTable ? (
-          <p className="text-sm text-muted-foreground">Select a table to generate reasoning.</p>
-        ) : (
-          <>
-            <p className="text-xs text-muted-foreground mb-3">
-              Table: <span className="text-foreground font-medium">{activeTable.name}</span>
-            </p>
+        <aside className="hidden w-[300px] overflow-y-auto border-l border-[var(--border-default)] bg-[var(--bg-surface)] px-4 py-5 xl:block">
+          <div className="flex items-center justify-between">
+            <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-muted)]">AI Reasoning</p>
+            <span className="pulse-ring relative inline-flex h-2 w-2 rounded-full bg-[var(--success)]" />
+          </div>
 
-            {aiLoading && (
-              <div className="mb-3 inline-flex items-center gap-2 text-xs text-muted-foreground">
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Generating insights...
-              </div>
-            )}
+          <div className="mt-4 space-y-3">
+            {reasoningSteps.map((step, idx) => (
+              <motion.div
+                key={step.id}
+                className="flex items-center justify-between rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 py-2"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25, delay: idx * 0.1 }}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-xs text-[var(--text-muted)]">0{step.id}</span>
+                  <span className="text-sm font-medium text-[var(--text-primary)]">{step.name}</span>
+                </div>
+                {step.status === "complete" ? (
+                  <CheckCircle2 className="h-4 w-4 text-[var(--success)]" />
+                ) : step.status === "active" ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--border-strong)] border-t-[var(--accent)]" />
+                ) : (
+                  <span className="h-2.5 w-2.5 rounded-full bg-[var(--text-muted)]" />
+                )}
+              </motion.div>
+            ))}
+          </div>
 
-            {aiError && (
-              <div className="mb-3 p-2 rounded border border-yellow-500/40 bg-yellow-500/10 text-yellow-200 text-xs">
+          <div className="mt-5 rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-elevated)] p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs text-[var(--text-muted)]">{summaryRole === "business" ? "Business Summary" : "Developer Summary"}</span>
+              <button
+                onClick={() => {
+                  if (activeTable) {
+                    const next = tables.find((t) => t.name === activeTable.name)
+                    if (next) setActiveTable({ ...next })
+                  }
+                  setSummaryRefreshTick((v) => v + 1)
+                }}
+                className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              >
+                Refresh
+              </button>
+            </div>
+
+            {aiError ? (
+              <div className="mb-2 rounded-[var(--radius-sm)] border border-[rgba(245,158,11,0.35)] bg-[var(--warning-dim)] px-2 py-1.5 text-[11px] text-[var(--warning)]">
                 {aiError}
               </div>
-            )}
+            ) : null}
 
-            <div className="rounded-lg bg-background/60 border border-border/60 p-3 min-h-[220px]">
-              <p className="text-sm leading-relaxed whitespace-pre-wrap text-secondary-foreground">
-                {aiDisplay || "Waiting for analysis..."}
-                {(aiLoading || (aiDisplay && aiDisplay.length < aiReasoning.length)) && (
-                  <span className="inline-block w-[6px] h-[1em] ml-0.5 align-middle bg-primary/80 animate-pulse" />
-                )}
-              </p>
-            </div>
-          </>
-        )}
+            <p className="min-h-[240px] whitespace-pre-wrap text-sm leading-relaxed text-[var(--text-secondary)]">
+              {aiDisplay || "Waiting for analysis..."}
+              {(aiLoading || (aiDisplay && aiDisplay.length < aiReasoning.length)) ? (
+                <span className="ml-1 inline-block h-[1em] w-[6px] animate-pulse bg-[var(--accent)] align-middle" />
+              ) : null}
+            </p>
+          </div>
+        </aside>
       </div>
+
+      <AnimatePresence>
+        {columnDrawer ? (
+          <>
+            <motion.div
+              className="fixed inset-0 z-40 bg-black/40"
+              onClick={closeColumnDrawer}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            />
+
+            <motion.aside
+              className="fixed right-0 top-0 z-50 flex h-screen w-full max-w-[460px] flex-col border-l border-[var(--border-default)] bg-[var(--bg-overlay)] shadow-[var(--shadow-lg)]"
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+            >
+              <div className="border-b border-[var(--border-default)] px-4 py-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.14em] text-[var(--text-muted)]">Column Detail Drawer</p>
+                    <h3 className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{columnDrawer.table}.{columnDrawer.column}</h3>
+                  </div>
+                  <button
+                    onClick={closeColumnDrawer}
+                    className="grid h-8 w-8 place-items-center rounded-[var(--radius-sm)] border border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]"
+                    title="Close"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-[var(--radius-sm)] border border-[var(--border-default)] bg-[var(--bg-surface)] p-2">
+                    <p className="text-[var(--text-muted)]">Type</p>
+                    <p className="font-medium text-[var(--text-primary)]">{columnContext?.data_type || getColumnType(columnDrawer.raw)}</p>
+                  </div>
+                  <div className="rounded-[var(--radius-sm)] border border-[var(--border-default)] bg-[var(--bg-surface)] p-2">
+                    <p className="text-[var(--text-muted)]">Rows</p>
+                    <p className="font-medium text-[var(--text-primary)]">{Number(columnContext?.row_count ?? columnDrawer.rowCount ?? 0).toLocaleString()}</p>
+                  </div>
+                  <div className="rounded-[var(--radius-sm)] border border-[var(--border-default)] bg-[var(--bg-surface)] p-2">
+                    <p className="text-[var(--text-muted)]">Null %</p>
+                    <p className="font-medium text-[var(--text-primary)]">{columnContext?.null_pct ?? "--"}</p>
+                  </div>
+                  <div className="rounded-[var(--radius-sm)] border border-[var(--border-default)] bg-[var(--bg-surface)] p-2">
+                    <p className="text-[var(--text-muted)]">Uniqueness %</p>
+                    <p className="font-medium text-[var(--text-primary)]">{columnContext?.uniqueness_pct ?? "--"}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex-1 space-y-3 overflow-y-auto p-4">
+                {columnChatMessages.length === 0 ? (
+                  <div className="rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-surface)] p-3 text-xs text-[var(--text-secondary)]">
+                    Ask about this column's distribution, null impact, semantics, or reporting implications.
+                  </div>
+                ) : (
+                  columnChatMessages.map((m, i) => (
+                    <div
+                      key={m.id || i}
+                      className={`rounded-[var(--radius-md)] border p-3 text-sm ${
+                        m.role === "user"
+                          ? "ml-8 border-[var(--border-accent)] bg-[var(--accent-dim)] text-[var(--text-primary)]"
+                          : "mr-4 border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-secondary)]"
+                      }`}
+                    >
+                      {m.content || (columnChatLoading && m.role === "assistant" ? "Thinking..." : "")}
+                      {m.role === "assistant" && m.diagnostics ? (
+                        <div className="mt-2 border-t border-[var(--border-subtle)] pt-2 text-[11px] text-[var(--text-muted)]">
+                          {m.diagnostics.model ? <span>Model: {m.diagnostics.model}</span> : null}
+                          {m.diagnostics.latency_ms !== undefined ? <span className="ml-3">Latency: {m.diagnostics.latency_ms} ms</span> : null}
+                          {m.diagnostics.generated_at ? <span className="ml-3">At: {new Date(m.diagnostics.generated_at).toLocaleTimeString()}</span> : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))
+                )}
+
+                {columnChatError ? (
+                  <div className="rounded-[var(--radius-sm)] border border-[rgba(239,68,68,0.35)] bg-[var(--danger-dim)] px-2 py-1.5 text-xs text-[var(--danger)]">
+                    {columnChatError}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="border-t border-[var(--border-default)] p-3">
+                <div className="flex gap-2">
+                  <input
+                    value={columnQuestion}
+                    onChange={(e) => setColumnQuestion(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault()
+                        sendColumnQuestion()
+                      }
+                    }}
+                    placeholder="Ask about this column..."
+                    className="h-10 flex-1 rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-input)] px-3 text-sm text-[var(--text-primary)] outline-none transition focus:border-[var(--accent)]"
+                  />
+                  <button
+                    onClick={sendColumnQuestion}
+                    disabled={columnChatLoading || !columnQuestion.trim()}
+                    className="grid h-10 w-10 place-items-center rounded-[var(--radius-md)] border border-[var(--border-accent)] bg-[var(--accent-dim)] text-[var(--accent-bright)] transition hover:bg-[rgba(99,102,241,0.22)] disabled:opacity-50"
+                    title="Send"
+                  >
+                    <Send className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </motion.aside>
+          </>
+        ) : null}
+      </AnimatePresence>
     </div>
   )
 }

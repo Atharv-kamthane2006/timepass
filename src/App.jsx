@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useEffect } from "react"
 import { SignedIn, SignedOut, UserButton, useAuth } from "@clerk/clerk-react"
 import { Routes, Route, Navigate, NavLink, useNavigate } from "react-router-dom"
 import { setTokenGetter } from "./api/api"
@@ -8,118 +8,107 @@ import DictionaryScreen from "./screens/DictionaryScreen"
 import ChatScreen from "./screens/ChatScreen"
 import QualityScreen from "./screens/QualityScreen"
 import Visualization3D from "./screens/Visualization3D"
+import AnalysisScreen from "./screens/AnalysisScreen"
 import SignInScreen from "./screens/SignInScreen"
 import SignUpScreen from "./screens/SignUpScreen"
-import { Database, Menu, X } from "lucide-react"
+import LandingPage from "./screens/LandingPage"
+import {
+  BarChart2,
+  BookOpen,
+  GitBranch,
+  MessageSquare,
+  Settings,
+  ShieldCheck,
+  UploadCloud,
+} from "lucide-react"
 
-function NavItem({ label, to, onClick }) {
+const SIDEBAR_ITEMS = [
+  { label: "Upload", to: "/upload", icon: UploadCloud },
+  { label: "Dictionary", to: "/dictionary", icon: BookOpen },
+  { label: "Chat", to: "/chat", icon: MessageSquare },
+  { label: "Visualization", to: "/visualization", icon: GitBranch },
+  { label: "Quality", to: "/quality", icon: ShieldCheck },
+  { label: "Analysis", to: "/analysis", icon: BarChart2 },
+]
+
+function SidebarNavItem({ label, to, icon: Icon }) {
   return (
     <NavLink
       to={to}
-      onClick={onClick}
       className={({ isActive }) =>
-        `px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+        `group relative grid h-10 w-10 place-items-center rounded-[var(--radius-md)] transition-all duration-150 ${
           isActive
-            ? "bg-accent text-accent-foreground shadow-md"
-            : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+            ? "bg-[var(--accent-dim)] text-[var(--accent-bright)]"
+            : "text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]"
         }`
       }
+      aria-label={label}
     >
-      {label}
+      {({ isActive }) => (
+        <>
+          {isActive ? (
+            <span className="absolute -left-3 top-1/2 h-6 w-[2px] -translate-y-1/2 rounded-full bg-[var(--accent)]" />
+          ) : null}
+          <Icon className="h-[18px] w-[18px]" />
+          <span className="pointer-events-none absolute left-[72px] top-1/2 z-[80] hidden -translate-y-1/2 whitespace-nowrap rounded-[var(--radius-sm)] border border-[var(--border-strong)] bg-[var(--bg-overlay)] px-[10px] py-1 text-xs text-[var(--text-primary)] shadow-[var(--shadow-md)] group-hover:block group-focus-within:block">
+            {label}
+            <span className="absolute left-[-5px] top-1/2 h-0 w-0 -translate-y-1/2 border-b-[5px] border-r-[5px] border-t-[5px] border-b-transparent border-r-[var(--bg-overlay)] border-t-transparent" />
+          </span>
+        </>
+      )}
     </NavLink>
   )
 }
 
 function MainLayout({ children }) {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-
   return (
-    <div className="bg-background text-foreground min-h-screen flex flex-col">
-      {/* Header */}
-      <header className="border-b border-border/70 bg-card/75 backdrop-blur-xl sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            {/* Logo */}
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center glow-border">
-                <Database className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <h1 className="text-lg font-bold hidden sm:flex items-center gap-2">
-                  SchemaSense
-                  <span className="text-xs font-mono font-normal text-primary bg-primary/10 px-2 py-0.5 rounded-full">3D</span>
-                </h1>
-                <span className="text-xs text-muted-foreground hidden lg:block">Interactive Data Visualization</span>
-              </div>
-            </div>
-
-            {/* Desktop Navigation */}
-            <nav className="hidden md:flex items-center gap-2">
-              <NavItem label="Upload" to="/upload" />
-              <NavItem label="Dictionary" to="/dictionary" />
-              <NavItem label="Chat" to="/chat" />
-              <NavItem label="Visualization" to="/visualization" />
-              <NavItem label="Quality" to="/quality" />
-
-              <NavLink
-                to="/upload"
-                className="ml-2 px-4 py-2 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/90 transition-colors glow-border"
-              >
-                + New Dataset
-              </NavLink>
-
-              {/* Authentication UI */}
-              <div className="ml-4 flex items-center border-l border-border/70 pl-4 h-8">
-                <UserButton 
-                  appearance={{
-                    elements: {
-                      avatarBox: "w-8 h-8 rounded-lg border border-primary/40 shadow-sm"
-                    }
-                  }}
-                />
-              </div>
-            </nav>
-
-            {/* Mobile Menu Button */}
-            <button
-              className="md:hidden p-2 hover:bg-secondary rounded-lg"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            >
-              {mobileMenuOpen ? (
-                <X className="w-5 h-5" />
-              ) : (
-                <Menu className="w-5 h-5" />
-              )}
-            </button>
+    <div className="min-h-screen bg-[var(--bg-void)] text-[var(--text-primary)]">
+      <aside className="fixed left-0 top-0 z-40 flex h-screen w-16 flex-col items-center justify-between border-r border-[var(--border-default)] bg-[var(--bg-surface)] py-4">
+        <div className="flex w-full flex-col items-center gap-5">
+          <div className="grid h-10 w-10 place-items-center rounded-[var(--radius-md)] border border-[var(--border-strong)] bg-[var(--bg-elevated)]">
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+              <path d="M14 2L24 8V20L14 26L4 20V8L14 2Z" stroke="var(--accent)" strokeWidth="1.4" />
+              <path d="M18.6 9.1C17.5 8.1 16.1 7.55 14 7.55C11.3 7.55 9.7 8.8 9.7 10.5C9.7 14.2 18.5 12.1 18.5 16.45C18.5 18.4 16.8 20.35 13.8 20.35C11.8 20.35 10.05 19.6 8.85 18.3" stroke="var(--accent-bright)" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
           </div>
 
-          {/* Mobile Navigation */}
-          {mobileMenuOpen && (
-            <div className="md:hidden border-t border-border/70 py-4 flex flex-col space-y-2">
-              <NavItem label="Upload" to="/upload" onClick={() => setMobileMenuOpen(false)} />
-              <NavItem label="Dictionary" to="/dictionary" onClick={() => setMobileMenuOpen(false)} />
-              <NavItem label="Chat" to="/chat" onClick={() => setMobileMenuOpen(false)} />
-              <NavItem label="Visualization" to="/visualization" onClick={() => setMobileMenuOpen(false)} />
-              <NavItem label="Quality" to="/quality" onClick={() => setMobileMenuOpen(false)} />
-              
-              <NavLink
-                to="/upload"
-                onClick={() => setMobileMenuOpen(false)}
-                className="w-full text-center px-4 py-2 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/90 transition-colors"
-              >
-                + New Dataset
-              </NavLink>
-
-              <div className="pt-2 border-t border-border/70 mt-2 flex justify-center">
-                <UserButton />
-              </div>
-            </div>
-          )}
+          <nav className="flex w-full flex-col items-center gap-2">
+            {SIDEBAR_ITEMS.map((item) => (
+              <SidebarNavItem key={item.to} {...item} />
+            ))}
+          </nav>
         </div>
-      </header>
 
-      {/* Main Content */}
-      <main className="w-full flex-1">
+        <div className="flex w-full flex-col items-center gap-3">
+          <div className="group relative grid h-10 w-10 place-items-center rounded-[var(--radius-md)] text-[var(--text-muted)] transition-all duration-150 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]">
+            <Settings className="h-[18px] w-[18px]" />
+            <span className="pointer-events-none absolute left-[72px] top-1/2 z-[80] hidden -translate-y-1/2 whitespace-nowrap rounded-[var(--radius-sm)] border border-[var(--border-strong)] bg-[var(--bg-overlay)] px-[10px] py-1 text-xs text-[var(--text-primary)] shadow-[var(--shadow-md)] group-hover:block group-focus-within:block">
+              Settings
+              <span className="absolute left-[-5px] top-1/2 h-0 w-0 -translate-y-1/2 border-b-[5px] border-r-[5px] border-t-[5px] border-b-transparent border-r-[var(--bg-overlay)] border-t-transparent" />
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="relative inline-flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--success)] opacity-55" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[var(--success)]" />
+            </span>
+            <span className="text-[10px] font-mono uppercase tracking-[0.08em] text-[var(--text-secondary)]">API</span>
+          </div>
+
+          <div className="mb-1 rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-elevated)] p-1">
+            <UserButton
+              appearance={{
+                elements: {
+                  avatarBox: "h-7 w-7 rounded-[8px]",
+                },
+              }}
+            />
+          </div>
+        </div>
+      </aside>
+
+      <main className="ml-16 min-h-screen bg-[var(--bg-base)]">
         {children}
       </main>
     </div>
@@ -162,14 +151,10 @@ export default function App() {
       <Route path="/chat" element={<ProtectedRoute><ChatScreen /></ProtectedRoute>} />
       <Route path="/visualization" element={<ProtectedRoute><Visualization3D /></ProtectedRoute>} />
       <Route path="/quality" element={<ProtectedRoute><QualityScreen /></ProtectedRoute>} />
+      <Route path="/analysis" element={<ProtectedRoute><AnalysisScreen /></ProtectedRoute>} />
 
-      {/* Index Redirect */}
-      <Route path="/" element={
-        <>
-          <SignedIn><Navigate to="/upload" replace /></SignedIn>
-          <SignedOut><Navigate to="/sign-in" replace /></SignedOut>
-        </>
-      } />
+      {/* Index Landing Page */}
+      <Route path="/" element={<LandingPage />} />
 
       {/* 404 Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -4,10 +4,10 @@ import { useVisualizationStore } from "../store/useVisualizationStore"
 
 function getTableColor(tableName) {
   const colors = [
-      '#3b82f6', '#8b5cf6', '#10b981',
-      '#f59e0b', '#ef4444', '#06b6d4',
-      '#84cc16', '#d946ef', '#14b8a6',
-      '#f43f5e', '#6366f1'
+      '#6366f1', '#3b82f6', '#10b981',
+      '#f59e0b', '#06b6d4', '#ec4899',
+      '#8b5cf6', '#14b8a6', '#f43f5e',
+      '#84cc16', '#eab308'
   ]
   const idx = String(tableName || '').charCodeAt(0) % colors.length
   return colors[idx >= 0 ? idx : 0]
@@ -25,8 +25,8 @@ export default function DBViz3D() {
 
   const graphData = useMemo(() => {
     const nodes = (tables || []).map((t, idx) => ({
-      id: t.id,
-      name: t.name,
+      id: String(t.id || t.name),
+      name: String(t.name),
       rows: t.rows,
       columns: t.columns,
       qualityScore: t.qualityScore,
@@ -35,12 +35,32 @@ export default function DBViz3D() {
       idx,
     }))
 
-    const links = (relationships || []).map((r) => ({
-      source: r.source,
-      target: r.target,
-      type: r.type || 'explicit',
-      label: r.sourceCol + ' -> ' + r.targetCol,
-    }))
+    const nodeIds = new Set(nodes.map(n => n.id))
+
+    // Fallbacks to handle slightly messy backend strings
+    const resolveId = (idString) => {
+       const cleaned = String(idString || '').trim()
+       return cleaned
+    }
+
+    const links = (relationships || [])
+      .map((r) => {
+        const strictSrc = resolveId(r.source)
+        const strictTgt = resolveId(r.target)
+        return {
+          source: strictSrc,
+          target: strictTgt,
+          type: r.type || 'explicit',
+          label: r.sourceCol + ' -> ' + r.targetCol,
+        }
+      })
+      .filter((l) => {
+         const valid = nodeIds.has(l.source) && nodeIds.has(l.target);
+         if (!valid) {
+             console.warn("DBViz3D Dropping link due to missing node:", l.source, "->", l.target);
+         }
+         return valid;
+      })
 
     return { nodes, links }
   }, [tables, relationships])
@@ -48,8 +68,8 @@ export default function DBViz3D() {
   useEffect(() => {
     if (!fgRef.current) return
     const timer = setTimeout(() => {
-      fgRef.current?.d3Force("charge")?.strength(-180)
-      fgRef.current?.d3Force("link")?.distance(110)
+      fgRef.current?.d3Force("charge")?.strength(-300)
+      fgRef.current?.d3Force("link")?.distance(140)
     }, 10)
     
     return () => {
@@ -62,7 +82,7 @@ export default function DBViz3D() {
     const queried = queriedTables.includes(nodeId)
 
     if (visualMode === "quality") return getQualityColor(node.qualityScore || 0)
-    if (visualMode === "ai-query" && queried) return "#f59e0b"
+    if (visualMode === "ai-query" && queried) return "#fbbf24" // Brighter amber for query focus
 
     return getTableColor(node.name)
   }
@@ -73,29 +93,32 @@ export default function DBViz3D() {
         ref={fgRef}
         graphData={graphData}
         backgroundColor="rgba(0,0,0,0)"
+        showNavInfo={false}
+        cooldownTicks={90}
         nodeColor={nodeColor}
         nodeVal={(n) => {
           const queried = queriedTables.includes(String(n.id || "").toLowerCase())
-          return queried && visualMode === "ai-query" ? n.val * 1.5 : n.val     
+          return queried && visualMode === "ai-query" ? n.val * 2.5 : n.val * 2
         }}
         nodeResolution={32}
-        nodeOpacity={0.95}
+        nodeOpacity={1}
+        linkOpacity={0.65}
         nodeLabel={(node) => {
           const quality = Math.round(node.qualityScore || 0)
-          return "<div style=\"padding:8px;background:#0e0f13;border:1px solid #1e2028;border-radius:8px;color:white\"><b>" + node.name + "</b><br/>Rows: " + (node.rows || 0).toLocaleString() + "<br/>Quality: " + quality + "%</div>"
+          return "<div style=\"padding:8px;background:#111827;border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#f8fafc;font-family:Inter,sans-serif\"><b>" + node.name + "</b><br/>Rows: " + (node.rows || 0).toLocaleString() + "<br/>Quality: " + quality + "%</div>"
         }}
         linkColor={(link) => 
             link.type === 'implicit' 
-            ? 'rgba(150, 150, 150, 0.2)' 
-            : 'rgba(255, 80, 80, 0.4)'
+            ? 'rgba(148, 163, 184, 0.4)' 
+            : 'rgba(56, 189, 248, 0.75)' // More vibrant light blue for explicit links
         }
-        linkWidth={(link) => (link.type === 'implicit' ? 0.5 : 1.5)}
-        linkDirectionalParticles={(link) => (link.type === 'implicit' ? 2 : 5)} 
+        linkWidth={(link) => (link.type === 'implicit' ? 1.5 : 2.5)}
+        linkDirectionalParticles={(link) => (link.type === 'implicit' ? 2 : 5)}
         linkDirectionalParticleWidth={(link) => (link.type === 'implicit' ? 1.5 : 3.5)}
         linkDirectionalParticleResolution={16}
-        linkDirectionalParticleSpeed={(link) => (link.type === 'implicit' ? 0.002 : 0.008)}
+        linkDirectionalParticleSpeed={(link) => (link.type === 'implicit' ? 0.005 : 0.015)}
         linkDirectionalParticleColor={(link) => 
-            link.type === 'implicit' ? 'rgba(200, 200, 200, 0.5)' : '#ff2a5f'
+            link.type === 'implicit' ? '#cbd5e1' : '#38bdf8'
         }
         onNodeClick={(node) => {
           const picked = tables.find((t) => t.id === node.id)

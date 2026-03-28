@@ -144,47 +144,69 @@ export default function Visualization3D() {
   }, [])
 
   return (
-    <div className="relative h-[calc(100vh-4rem)] bg-dark overflow-hidden">
-      <div className="absolute top-3 left-3 z-20 flex flex-wrap items-center gap-2">
+    <div className="h-screen overflow-hidden bg-[var(--bg-base)]">
+      <header className="flex h-[76px] items-center justify-between border-b border-[var(--border-default)] px-6">
+        <div>
+          <div className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+            <span>SchemaSense AI</span>
+            <span>/</span>
+            <span className="text-[var(--text-primary)]">Visualization</span>
+          </div>
+          <h1 className="mt-1 text-base font-semibold text-[var(--text-primary)]">Schema Graph Intelligence</h1>
+        </div>
+
+        <div className="hidden items-center gap-2 md:flex">
+          <span className="badge badge-muted">{tables.length} nodes</span>
+          <span className="badge badge-muted">{relationships.length} edges</span>
+          <span className="badge badge-accent">{viewMode.toUpperCase()} mode</span>
+        </div>
+      </header>
+
+      <div className="relative h-[calc(100vh-76px)] overflow-hidden">
+      <div className="absolute left-3 top-3 z-20 flex flex-wrap items-center gap-2 rounded-[var(--radius-lg)] border border-[var(--border-default)] bg-[var(--bg-surface)]/95 p-2 shadow-[var(--shadow-md)] backdrop-blur">
         <button
           onClick={() => setViewMode("3d")}
-          className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+          aria-pressed={viewMode === "3d"}
+          className={`rounded-[var(--radius-md)] border px-3 py-1.5 text-sm transition-colors ${
             viewMode === "3d"
-              ? "bg-primary text-white border-primary"
-              : "bg-secondary/80 text-gray-300 border-border hover:bg-secondary"
+              ? "border-[var(--border-accent)] bg-[var(--accent-dim)] text-[var(--accent-bright)]"
+              : "border-[var(--border-default)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
           }`}
         >
-          <span className="inline-flex items-center gap-1.5"><Layers3 className="w-4 h-4" /> 3D Graph</span>
+          <span className="inline-flex items-center gap-1.5"><Layers3 className="h-4 w-4" /> 3D Graph</span>
         </button>
 
         <button
           onClick={() => setViewMode("2d")}
-          className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+          aria-pressed={viewMode === "2d"}
+          className={`rounded-[var(--radius-md)] border px-3 py-1.5 text-sm transition-colors ${
             viewMode === "2d"
-              ? "bg-primary text-white border-primary"
-              : "bg-secondary/80 text-gray-300 border-border hover:bg-secondary"
+              ? "border-[var(--border-accent)] bg-[var(--accent-dim)] text-[var(--accent-bright)]"
+              : "border-[var(--border-default)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
           }`}
         >
-          <span className="inline-flex items-center gap-1.5"><Network className="w-4 h-4" /> 2D ER Diagram</span>
+          <span className="inline-flex items-center gap-1.5"><Network className="h-4 w-4" /> 2D ER Diagram</span>
         </button>
 
         <button
           onClick={() => setViewMode("analytics")}
-          className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+          aria-pressed={viewMode === "analytics"}
+          className={`rounded-[var(--radius-md)] border px-3 py-1.5 text-sm transition-colors ${
             viewMode === "analytics"
-              ? "bg-primary text-white border-primary"
-              : "bg-secondary/80 text-gray-300 border-border hover:bg-secondary"
+              ? "border-[var(--border-accent)] bg-[var(--accent-dim)] text-[var(--accent-bright)]"
+              : "border-[var(--border-default)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
           }`}
         >
-          <span className="inline-flex items-center gap-1.5"><BarChart3 className="w-4 h-4" /> Analytics</span>
+          <span className="inline-flex items-center gap-1.5"><BarChart3 className="h-4 w-4" /> Analytics</span>
         </button>
 
         <button
           onClick={() => setVisualMode(visualMode === "quality" ? "default" : "quality")}
-          className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+          aria-pressed={visualMode === "quality"}
+          className={`rounded-[var(--radius-md)] border px-3 py-1.5 text-sm transition-colors ${
             visualMode === "quality"
-              ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/40"
-              : "bg-secondary/80 text-gray-300 border-border hover:bg-secondary"
+              ? "border-[rgba(245,158,11,0.35)] bg-[var(--warning-dim)] text-[var(--warning)]"
+              : "border-[var(--border-default)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
           }`}
         >
           {visualMode === "quality" ? "Quality Color On" : "Quality Color Off"}
@@ -192,71 +214,72 @@ export default function Visualization3D() {
 
         <button
           onClick={loadVisualizationData}
-          className="px-3 py-1.5 rounded-lg text-sm border bg-secondary/80 text-gray-300 border-border hover:bg-secondary transition-colors"
+          className="rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]"
         >
-          <span className="inline-flex items-center gap-1.5"><RefreshCw className="w-4 h-4" /> Reload</span>
+          <span className="inline-flex items-center gap-1.5"><RefreshCw className="h-4 w-4" /> Reload</span>
         </button>
 
         <button
           onClick={() => setShowDebug((v) => !v)}
-          className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+          aria-pressed={showDebug}
+          className={`rounded-[var(--radius-md)] border px-3 py-1.5 text-sm transition-colors ${
             showDebug
-              ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
-              : "bg-secondary/80 text-gray-300 border-border hover:bg-secondary"
+              ? "border-[rgba(59,130,246,0.35)] bg-[var(--info-dim)] text-[var(--info)]"
+              : "border-[var(--border-default)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
           }`}
         >
-          <span className="inline-flex items-center gap-1.5"><Bug className="w-4 h-4" /> Debug</span>
+          <span className="inline-flex items-center gap-1.5"><Bug className="h-4 w-4" /> Debug</span>
         </button>
       </div>
 
-      <div className="absolute top-3 right-3 z-20 px-3 py-1.5 rounded-lg bg-secondary/90 border border-border text-xs text-muted">
+      <div className="absolute right-3 top-3 z-20 rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-surface)]/95 px-3 py-1.5 text-xs text-[var(--text-secondary)] backdrop-blur">
         Highlighted from chat: {queriedTables.length}
       </div>
 
-      <div className="absolute top-14 right-3 z-20 px-3 py-1.5 rounded-lg bg-secondary/90 border border-border text-xs text-muted">
+      <div className="absolute right-3 top-14 z-20 rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-surface)]/95 px-3 py-1.5 text-xs text-[var(--text-secondary)] backdrop-blur">
         Tables: {tables.length} | Relationships: {relationships.length}
       </div>
 
       {!loading && !error && (tables.length <= 1 || relationships.length === 0) && (
-        <div className="absolute top-14 left-3 z-20 max-w-xl rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-200">
+        <div className="absolute left-3 top-16 z-20 max-w-xl rounded-[var(--radius-md)] border border-[rgba(245,158,11,0.35)] bg-[var(--warning-dim)] px-3 py-2 text-xs text-[var(--warning)]">
           Graph has limited data from backend right now ({tables.length} table, {relationships.length} relationships). If you uploaded multiple CSVs, backend ingest is likely replacing instead of appending.
         </div>
       )}
 
       {loading && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-dark/80 backdrop-blur-sm">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/45 backdrop-blur-sm">
           <div className="text-center">
-            <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-sm text-muted">Loading graph data...</p>
+            <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-2 border-[var(--accent)] border-t-transparent" />
+            <p className="text-sm text-[var(--text-secondary)]">Loading graph data...</p>
           </div>
         </div>
       )}
 
       {error && !loading && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 max-w-xl rounded-xl border border-red-500/40 bg-red-500/10 p-2 text-center shadow-lg pointer-events-none">
-          <p className="text-xs text-red-300 flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-red-400" />{error}</p>
+        <div className="pointer-events-none absolute left-1/2 top-16 z-30 max-w-xl -translate-x-1/2 rounded-[var(--radius-lg)] border border-[rgba(239,68,68,0.35)] bg-[var(--danger-dim)] p-2 text-center shadow-[var(--shadow-lg)]">
+          <p className="flex items-center gap-2 text-xs text-[var(--danger)]"><AlertTriangle className="h-4 w-4" />{error}</p>
         </div>
       )}
 
       {showDebug && !loading && (
-        <div className="absolute bottom-4 right-4 z-30 w-[360px] rounded-lg border border-cyan-500/30 bg-slate-950/90 p-3 text-xs text-cyan-100 shadow-xl">
-          <p className="font-semibold text-cyan-300 mb-2">Visualization Debug</p>
+        <div className="absolute bottom-4 right-4 z-30 w-[360px] rounded-[var(--radius-lg)] border border-[rgba(59,130,246,0.35)] bg-[var(--bg-overlay)] p-3 text-xs text-[var(--text-secondary)] shadow-[var(--shadow-lg)]">
+          <p className="mb-2 font-semibold text-[var(--info)]">Visualization Debug</p>
           <p>Tables: {tables.length}</p>
           <p>Relationships: {relationships.length}</p>
           {debugInfo?.diagnostics?.generated_at ? <p>Generated At: {debugInfo.diagnostics.generated_at}</p> : null}
           {debugInfo?.diagnostics?.edge_count !== undefined ? <p>Diagnostics Edge Count: {debugInfo.diagnostics.edge_count}</p> : null}
           {debugInfo?.diagnostics ? (
-            <div className="mt-2 rounded border border-cyan-500/20 bg-cyan-500/5 p-2">
-              <p className="text-cyan-300 mb-1">Backend Diagnostics</p>
-              <pre className="whitespace-pre-wrap break-words text-[11px] text-cyan-100/90">{JSON.stringify(debugInfo.diagnostics, null, 2)}</pre>
+            <div className="mt-2 rounded-[var(--radius-sm)] border border-[rgba(59,130,246,0.25)] bg-[var(--info-dim)] p-2">
+              <p className="mb-1 text-[var(--info)]">Backend Diagnostics</p>
+              <pre className="whitespace-pre-wrap break-words text-[11px] text-[var(--text-primary)]">{JSON.stringify(debugInfo.diagnostics, null, 2)}</pre>
             </div>
           ) : null}
-          <div className="mt-2 rounded border border-cyan-500/20 bg-cyan-500/5 p-2">
-            <p className="text-cyan-300 mb-1">Sample Edges</p>
+          <div className="mt-2 rounded-[var(--radius-sm)] border border-[rgba(59,130,246,0.25)] bg-[var(--info-dim)] p-2">
+            <p className="mb-1 text-[var(--info)]">Sample Edges</p>
             {debugInfo.sampleEdges.length === 0 ? (
-              <p className="text-cyan-100/80">No edges in payload</p>
+              <p className="text-[var(--text-secondary)]">No edges in payload</p>
             ) : (
-              <pre className="whitespace-pre-wrap break-words text-[11px] text-cyan-100/90">{JSON.stringify(debugInfo.sampleEdges, null, 2)}</pre>
+              <pre className="whitespace-pre-wrap break-words text-[11px] text-[var(--text-primary)]">{JSON.stringify(debugInfo.sampleEdges, null, 2)}</pre>
             )}
           </div>
         </div>
@@ -264,6 +287,7 @@ export default function Visualization3D() {
 
       {viewMode === "3d" ? <DBViz3D /> : viewMode === "2d" ? <ERDiagram2D /> : <AnalyticsDashboard />}
       <NodeDetailOverlay />
+      </div>
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import API from "../api/api"
-import { Send, AlertCircle, CheckCircle, Loader } from "lucide-react"
+import { Send, AlertCircle, CheckCircle, Loader, Bot, MessageSquare } from "lucide-react"
 import { useVisualizationStore } from "../store/useVisualizationStore"
 
 function normalizeUserQuestion(question) {
@@ -89,13 +89,12 @@ function TypewriterText({ text, speed = 18, onDone }) {
 function hasExecutionIssue(msg) {
   if (msg?.execution_ok === false && msg?.used_fallback !== true) return true
 
-  const explanation = String(msg?.explanation || "").toLowerCase()
   const executionError = String(msg?.execution_error || "").trim()
-  const issueWords = /(failed|error|fallback|self-correction|fix failed|syntax error)/
-
   if (executionError.length > 0) return true
   if (msg?.execution_ok === false) return true
-  return issueWords.test(explanation)
+  
+  // Do NOT passively fail on the word 'error' in AI explanations (caused false positives)
+  return false
 }
 
 function isFallbackWithData(msg) {
@@ -180,218 +179,236 @@ export default function ChatScreen() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
-      {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {messages.length === 0 && (
-          <div className="h-full flex items-center justify-center">
-            <div className="text-center">
-              <div className="text-5xl mb-4">💬</div>
-              <p className="text-muted text-lg">
-                Ask something like "Show all orders"
-              </p>
-            </div>
+    <div className="h-screen overflow-hidden bg-[var(--bg-base)]">
+      <header className="flex h-[76px] items-center justify-between border-b border-[var(--border-default)] px-6">
+        <div>
+          <div className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+            <span>SchemaSense AI</span>
+            <span>/</span>
+            <span className="text-[var(--text-primary)]">Chat</span>
           </div>
-        )}
+          <h1 className="mt-1 text-base font-semibold text-[var(--text-primary)]">SQL Copilot</h1>
+        </div>
 
-        <AnimatePresence>
-          {messages.map((msg, i) => (
-            <motion.div
-              key={msg.id ?? i}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
-            >
-              {msg.role === "user" && (
-                <div className="flex justify-end mb-4">
-                  <motion.div
-                    initial={{ scale: 0.95 }}
-                    animate={{ scale: 1 }}
-                    className="inline-block max-w-xs lg:max-w-md px-4 py-3 bg-accent text-accent-foreground rounded-2xl shadow-lg"
-                  >
-                    {msg.text}
-                  </motion.div>
+        <div className="hidden items-center gap-2 md:flex">
+          <span className="badge badge-muted inline-flex items-center gap-1">
+            <MessageSquare className="h-3 w-3" />
+            {messages.length} messages
+          </span>
+          <span className="badge badge-accent inline-flex items-center gap-1">
+            <Bot className="h-3 w-3" />
+            Assistant Active
+          </span>
+        </div>
+      </header>
+
+      <div className="grid h-[calc(100vh-76px)] grid-rows-[1fr_auto]">
+        <div className="overflow-y-auto px-4 py-5 md:px-6">
+          <div className="mx-auto max-w-5xl space-y-4">
+            {messages.length === 0 && (
+              <div className="card grid min-h-[260px] place-items-center border border-[var(--border-default)]">
+                <div className="text-center">
+                  <Bot className="mx-auto mb-3 h-7 w-7 text-[var(--text-muted)]" />
+                  <p className="text-sm text-[var(--text-secondary)]">Ask anything about your dataset.</p>
+                  <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">Example: Show top 20 orders by total_price desc</p>
                 </div>
-              )}
-
-              {msg.role === "ai" && (
-                <div className="flex justify-start mb-4">
-                  <div className="max-w-2xl w-full">
-                    {msg.kind === "network_error" ? (
-                      <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 flex gap-3">
-                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                        <div className="flex-1">
-                          <p className="text-sm text-red-500 mb-3">{msg.error}</p>
-                          <button
-                            onClick={() => handleSend(msg.retryQuestion)}
-                            className="px-3 py-1.5 bg-primary hover:bg-primary/90 text-white text-sm rounded-lg transition-colors"
-                          >
-                            Retry
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="glass-panel rounded-lg p-4 space-y-3"
-                      >
-                        {(() => {
-                          const hasIssue = hasExecutionIssue(msg)
-                          const fallbackData = isFallbackWithData(msg)
-                          const isSuccess = msg.execution_ok === true && !hasIssue
-
-                          return (
-                            <>
-                              {/* Execution warning when backend returns fallback rows */}
-                              {fallbackData && (
-                                <div className="flex gap-2 p-3 bg-yellow-500/10 rounded border border-yellow-500/50">
-                                  <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                                  <p className="text-xs text-yellow-200">
-                                    Backend returned fallback rows due to SQL guardrails. Results may not match your question exactly.
-                                  </p>
-                                </div>
-                              )}
-
-                              {/* Hard execution error when no valid rows are returned */}
-                              {hasIssue && !fallbackData && (
-                                <div className="flex gap-2 p-3 bg-red-500/10 rounded border border-red-500/50">
-                                  <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                                  <p className="text-xs text-red-500">
-                                    {msg.execution_error || "Query fallback/error detected in execution details."}
-                                  </p>
-                                </div>
-                              )}
-
-                              {/* Execution Success */}
-                              {isSuccess && (
-                                <div className="flex gap-2 p-3 bg-green-500/10 rounded border border-green-500/50">
-                                  <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
-                                  <p className="text-xs text-green-500">Query executed successfully</p>
-                                </div>
-                              )}
-                            </>
-                          )
-                        })()}
-
-                        {/* SQL Query */}
-                        <div className="bg-background/70 rounded p-3 border border-border/70">
-                          <p className="text-xs font-semibold text-muted-foreground mb-2">SQL Query</p>
-                          <pre className="text-sm text-primary font-mono whitespace-pre-wrap break-words overflow-hidden">
-                            <TypewriterText text={msg.sql} speed={10} />
-                          </pre>
-                        </div>
-
-                        {/* Explanation */}
-                        <div>
-                          <p className="text-xs font-semibold text-muted-foreground mb-1">Explanation</p>
-                          <p className="text-sm text-secondary-foreground leading-relaxed">
-                            <TypewriterText
-                              text={msg.explanation}
-                              speed={15}
-                              onDone={() => {
-                                if (!revealedMessages[msg.id]) {
-                                  setRevealedMessages((prev) => ({ ...prev, [msg.id]: true }))
-                                }
-                              }}
-                            />
-                          </p>
-                        </div>
-
-                        {/* Results Table */}
-                        {revealedMessages[msg.id] && Array.isArray(msg.results) && msg.results.length > 0 ? (
-                          <div className="overflow-x-auto">
-                            <p className="text-xs font-semibold text-muted-foreground mb-2">Results</p>
-                            <table className="w-full text-xs">
-                              <thead>
-                                <tr className="border-b border-border">
-                                  {Object.keys(msg.results[0] || {}).map((key) => (
-                                    <th key={key} className="text-left py-2 px-2 text-muted-foreground font-semibold">
-                                      {key}
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {msg.results.slice(0, 10).map((row, idx) => (
-                                  <tr key={idx} className="border-b border-border/50 hover:bg-muted/40">
-                                    {Object.values(row).map((val, i) => (
-                                      <td key={i} className="py-2 px-2 text-secondary-foreground">
-                                        {String(val).substring(0, 50)}
-                                      </td>
-                                    ))}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                            {msg.results.length > 10 && (
-                              <p className="text-xs text-muted-foreground mt-2">
-                                ... and {msg.results.length - 10} more rows
-                              </p>
-                            )}
-                          </div>
-                        ) : revealedMessages[msg.id] ? (
-                          <p className="text-xs text-muted-foreground italic">No results returned</p>
-                        ) : (
-                          <p className="text-xs text-muted-foreground italic">Preparing result table...</p>
-                        )}
-                      </motion.div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          ))}
-        </AnimatePresence>
-
-        {/* Thinking Indicator */}
-        {isThinking && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex justify-start"
-          >
-            <div className="flex items-center gap-2 px-4 py-3 glass-panel rounded-lg">
-              <Loader className="w-4 h-4 text-primary animate-spin" />
-              <span className="text-sm text-muted-foreground">AI is thinking...</span>
-            </div>
-          </motion.div>
-        )}
-      </div>
-
-      {/* Input Area */}
-      <div className="border-t border-border/70 p-4 md:p-6 bg-card/75 backdrop-blur-xl">
-        <div className="max-w-4xl mx-auto flex gap-3">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => {
-              if (e.key === "Enter" && !isThinking) {
-                handleSend()
-              }
-            }}
-            placeholder="Ask something like 'Show all orders'"
-            disabled={isThinking}
-            className="flex-1 px-4 py-3 bg-background/80 border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors disabled:opacity-50"
-          />
-          <button
-            onClick={handleSend}
-            disabled={isThinking || !input.trim()}
-            className="px-6 py-3 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 glow-border"
-          >
-            {isThinking ? (
-              <>
-                <Loader className="w-4 h-4 animate-spin" />
-                Thinking...
-              </>
-            ) : (
-              <>
-                <Send className="w-4 h-4" />
-                Send
-              </>
+              </div>
             )}
-          </button>
+
+            <AnimatePresence>
+              {messages.map((msg, i) => (
+                <motion.div
+                  key={msg.id ?? i}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  {msg.role === "user" && (
+                    <div className="mb-4 flex justify-end">
+                      <motion.div
+                        initial={{ scale: 0.97 }}
+                        animate={{ scale: 1 }}
+                        className="inline-block max-w-xs rounded-2xl border border-[var(--border-accent)] bg-[var(--accent-dim)] px-4 py-3 text-sm text-[var(--text-primary)] shadow-[var(--shadow-sm)] lg:max-w-md"
+                      >
+                        {msg.text}
+                      </motion.div>
+                    </div>
+                  )}
+
+                  {msg.role === "ai" && (
+                    <div className="mb-4 flex justify-start">
+                      <div className="w-full max-w-3xl">
+                        {msg.kind === "network_error" ? (
+                          <div className="flex gap-3 rounded-[var(--radius-lg)] border border-[rgba(239,68,68,0.35)] bg-[var(--danger-dim)] p-4">
+                            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-[var(--danger)]" />
+                            <div className="flex-1">
+                              <p className="mb-3 text-sm text-[var(--danger)]">{msg.error}</p>
+                              <button
+                                onClick={() => handleSend(msg.retryQuestion)}
+                                className="rounded-[var(--radius-md)] border border-[var(--border-accent)] bg-[var(--accent-dim)] px-3 py-1.5 text-xs text-[var(--accent-bright)] transition hover:bg-[rgba(99,102,241,0.25)]"
+                              >
+                                Retry
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="card space-y-3 rounded-[var(--radius-lg)] border border-[var(--border-default)] p-4"
+                          >
+                            {(() => {
+                              const hasIssue = hasExecutionIssue(msg)
+                              const fallbackData = isFallbackWithData(msg)
+                              const isSuccess = msg.execution_ok === true && !hasIssue
+
+                              return (
+                                <>
+                                  {fallbackData && (
+                                    <div className="flex gap-2 rounded-[var(--radius-sm)] border border-[rgba(245,158,11,0.35)] bg-[var(--warning-dim)] p-3">
+                                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--warning)]" />
+                                      <p className="text-xs text-[var(--warning)]">
+                                        Backend returned fallback rows due to SQL guardrails. Results may not match your question exactly.
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {hasIssue && !fallbackData && (
+                                    <div className="flex gap-2 rounded-[var(--radius-sm)] border border-[rgba(239,68,68,0.35)] bg-[var(--danger-dim)] p-3">
+                                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--danger)]" />
+                                      <p className="text-xs text-[var(--danger)]">
+                                        {msg.execution_error || "Query fallback/error detected in execution details."}
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {isSuccess && (
+                                    <div className="flex gap-2 rounded-[var(--radius-sm)] border border-[rgba(16,185,129,0.35)] bg-[var(--success-dim)] p-3">
+                                      <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--success)]" />
+                                      <p className="text-xs text-[var(--success)]">Query executed successfully</p>
+                                    </div>
+                                  )}
+                                </>
+                              )
+                            })()}
+
+                            <div className="rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-input)] p-3">
+                              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">SQL Query</p>
+                              <pre className="overflow-hidden whitespace-pre-wrap break-words font-mono text-xs text-[var(--accent-bright)]">
+                                <TypewriterText text={msg.sql} speed={10} />
+                              </pre>
+                            </div>
+
+                            <div>
+                              <p className="mb-1 text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Explanation</p>
+                              <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                                <TypewriterText
+                                  text={msg.explanation}
+                                  speed={15}
+                                  onDone={() => {
+                                    if (!revealedMessages[msg.id]) {
+                                      setRevealedMessages((prev) => ({ ...prev, [msg.id]: true }))
+                                    }
+                                  }}
+                                />
+                              </p>
+                            </div>
+
+                            {revealedMessages[msg.id] && Array.isArray(msg.results) && msg.results.length > 0 ? (
+                              <div className="overflow-x-auto rounded-[var(--radius-md)] border border-[var(--border-default)]">
+                                <p className="border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">
+                                  Results
+                                </p>
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="border-b border-[var(--border-subtle)]">
+                                      {Object.keys(msg.results[0] || {}).map((key) => (
+                                        <th key={key} className="px-2 py-2 text-left font-semibold text-[var(--text-muted)]">
+                                          {key}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {msg.results.slice(0, 10).map((row, idx) => (
+                                      <tr key={idx} className="border-b border-[var(--border-subtle)] hover:bg-[rgba(255,255,255,0.02)]">
+                                        {Object.values(row).map((val, valIdx) => (
+                                          <td key={valIdx} className="px-2 py-2 text-[var(--text-secondary)]">
+                                            {String(val).substring(0, 50)}
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                                {msg.results.length > 10 && (
+                                  <p className="px-3 py-2 text-xs text-[var(--text-muted)]">... and {msg.results.length - 10} more rows</p>
+                                )}
+                              </div>
+                            ) : revealedMessages[msg.id] ? (
+                              <p className="text-xs italic text-[var(--text-muted)]">No results returned</p>
+                            ) : (
+                              <p className="text-xs italic text-[var(--text-muted)]">Preparing result table...</p>
+                            )}
+                          </motion.div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              ))}
+            </AnimatePresence>
+
+            {isThinking && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex justify-start"
+              >
+                <div className="flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-surface)] px-4 py-3">
+                  <Loader className="h-4 w-4 animate-spin text-[var(--accent-bright)]" />
+                  <span className="text-sm text-[var(--text-secondary)]">AI is thinking...</span>
+                </div>
+              </motion.div>
+            )}
+          </div>
+        </div>
+
+        <div className="border-t border-[var(--border-default)] bg-[var(--bg-surface)]/85 px-4 py-3 backdrop-blur md:px-6">
+          <div className="mx-auto flex max-w-5xl gap-3">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !isThinking) {
+                  handleSend()
+                }
+              }}
+              placeholder="Ask something like 'Show all orders'"
+              disabled={isThinking}
+              aria-label="Ask SQL assistant"
+              className="h-11 flex-1 rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-input)] px-4 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition focus:border-[var(--accent)] disabled:opacity-50"
+            />
+            <button
+              onClick={handleSend}
+              disabled={isThinking || !input.trim()}
+              className="inline-flex h-11 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-accent)] bg-[var(--accent-dim)] px-5 text-sm font-medium text-[var(--accent-bright)] transition hover:bg-[rgba(99,102,241,0.25)] disabled:opacity-50"
+              aria-label="Send message"
+            >
+              {isThinking ? (
+                <>
+                  <Loader className="h-4 w-4 animate-spin" />
+                  Thinking...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4" />
+                  Send
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>
